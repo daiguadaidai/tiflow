@@ -106,7 +106,7 @@ const (
     "table-actor": {
       "event-batch-size": 32
     },
-    "enable-pull-based-sink": true,
+    "enable-pull-based-sink": false,
     "enable-db-sorter": true,
     "db": {
       "count": 8,
@@ -136,8 +136,7 @@ const (
       "heartbeat-tick": 2,
       "max-task-concurrency": 10,
       "check-balance-interval": 60000000000,
-      "add-table-batch-size": 50,
-      "region-per-span": 0
+      "add-table-batch-size": 50
     },
     "enable-new-sink": true
   },
@@ -151,7 +150,6 @@ const (
   "force-replicate": true,
   "check-gc-safe-point": true,
   "enable-sync-point": false,
-  "bdr-mode": false,
   "sync-point-interval": 600000000000,
   "sync-point-retention": 86400000000000,
   "filter": {
@@ -206,7 +204,6 @@ const (
   "force-replicate": true,
   "check-gc-safe-point": true,
   "enable-sync-point": false,
-  "bdr-mode": false,
   "sync-point-interval": 600000000000,
   "sync-point-retention": 86400000000000,
   "filter": {

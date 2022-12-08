@@ -68,8 +68,6 @@ const (
 	defaultJobMasterCost = 1
 	jobOperateInterval   = time.Second * 15
 	defaultHTTPTimeout   = time.Second * 10
-	defaultListPageSize  = 100
-	maxListPageSize      = 1000
 )
 
 var jobIDRegex = regexp.MustCompile(`^\w([-.\w]{0,61}\w)?$`)
@@ -212,6 +210,10 @@ func (jm *JobManagerImpl) deleteJobMeta(ctx context.Context, jobID string) error
 	return nil
 }
 
+func (jm *JobManagerImpl) canQueryJobDetail(masterMeta *frameModel.MasterMeta) bool {
+	return masterMeta.State == frameModel.MasterStateInit || jm.JobFsm.QueryOnlineJob(masterMeta.ID) != nil
+}
+
 // GetJob implements JobManagerServer.GetJob.
 func (jm *JobManagerImpl) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.Job, error) {
 	masterMeta, err := jm.frameMetaClient.GetJobByID(ctx, req.Id)
@@ -222,13 +224,13 @@ func (jm *JobManagerImpl) GetJob(ctx context.Context, req *pb.GetJobRequest) (*p
 		return nil, err
 	}
 
-	job, err := buildPBJob(masterMeta, req.IncludeConfig)
-	if err != nil {
-		return nil, err
+	// if job status is running, forward the request to jobmaster openapi
+	if jm.canQueryJobDetail(masterMeta) {
+		detail, err := jm.jobHTTPClient.GetJobDetail(ctx, masterMeta.Addr, req.Id)
+		setDetailToMasterMeta(masterMeta, detail, err)
 	}
-	jm.tryQueryJobDetail(ctx, masterMeta.Addr, job)
 
-	return job, nil
+	return buildPBJob(masterMeta, req.IncludeConfig)
 }
 
 // CreateJob implements JobManagerServer.CreateJob.
@@ -354,6 +356,7 @@ func convertSelectors(req *pb.CreateJobRequest) ([]*label.Selector, error) {
 
 // ListJobs implements JobManagerServer.ListJobs.
 func (jm *JobManagerImpl) ListJobs(ctx context.Context, req *pb.ListJobsRequest) (*pb.ListJobsResponse, error) {
+	var err error
 	masterMetas, err := jm.frameMetaClient.QueryJobs(ctx)
 	if err != nil {
 		return nil, err
@@ -363,62 +366,54 @@ func (jm *JobManagerImpl) ListJobs(ctx context.Context, req *pb.ListJobsRequest)
 		return masterMetas[i].ID < masterMetas[j].ID
 	})
 
+	resp := &pb.ListJobsResponse{
+		NextPageToken: req.PageToken,
+	}
 	firstIdx := sort.Search(len(masterMetas), func(i int) bool {
 		return masterMetas[i].ID > req.PageToken
 	})
 
-	pageSize := req.PageSize
-	if pageSize <= 0 {
-		pageSize = defaultListPageSize
-	} else if pageSize > maxListPageSize {
-		pageSize = maxListPageSize
-	}
-
-	resp := &pb.ListJobsResponse{}
+	var job *pb.Job
 	for i := firstIdx; i < len(masterMetas); i++ {
 		if masterMetas[i].Type == frameModel.JobManager {
 			continue
 		}
 
-		job, err := buildPBJob(masterMetas[i], req.IncludeConfig)
+		// if job status is running, forward the request to jobmaster openapi
+		if jm.canQueryJobDetail(masterMetas[i]) {
+			detail, errJob := jm.jobHTTPClient.GetJobDetail(ctx, masterMetas[i].Addr, masterMetas[i].ID)
+			setDetailToMasterMeta(masterMetas[i], detail, errJob)
+		}
+
+		job, err = buildPBJob(masterMetas[i], req.IncludeConfig)
 		if err != nil {
 			return nil, err
 		}
-		if req.Type != pb.Job_TypeUnknown && job.Type != req.Type {
-			continue
-		}
-		if req.State != pb.Job_StateUnknown && job.State != req.State {
-			continue
-		}
-		jm.tryQueryJobDetail(ctx, masterMetas[i].Addr, job)
-
+		resp.NextPageToken = job.Id
 		resp.Jobs = append(resp.Jobs, job)
-		// Retrieve one more job to determine whether there is a next page.
-		if int32(len(resp.Jobs)) >= pageSize+1 {
+		if req.PageSize > 0 && int32(len(resp.Jobs)) >= req.PageSize {
 			break
 		}
 	}
 
-	if len(resp.Jobs) > int(pageSize) {
-		resp.Jobs = resp.Jobs[:pageSize]
-		resp.NextPageToken = resp.Jobs[pageSize-1].Id
-	}
 	return resp, nil
 }
 
-func (jm *JobManagerImpl) tryQueryJobDetail(ctx context.Context, jobMasterAddr string, job *pb.Job) {
-	// If job is not running, we can't query job detail from jobmaster.
-	if job.State != pb.Job_Running || jm.JobFsm.QueryOnlineJob(job.Id) == nil {
-		return
-	}
-	detail, err := jm.jobHTTPClient.GetJobDetail(ctx, jobMasterAddr, job.Id)
-	if err != nil {
-		job.Error = &pb.Job_Error{
-			Code:    "", // TODO: extract error code from err.
-			Message: err.Error(),
+// setDetailToMasterMeta sets the results from GetJobDetail to master meta
+func setDetailToMasterMeta(masterMeta *frameModel.MasterMeta, detail []byte, errJob error) {
+	if errJob != nil {
+		// Currently, we simply ignore 404 error
+		if errors.Is(errJob, errors.ErrJobManagerRespStatusCode404) {
+			log.Warn("get job detail from jobmaster fail", zap.Error(errJob))
+			return
 		}
-	} else {
-		job.Detail = detail
+
+		// TODO: deal the response body here after we has normalized the error response format
+		log.Error("get job detail from jobmaster fail", zap.Error(errJob))
+		// TODO: we should not put the error message here directly
+		masterMeta.ErrorMsg = errJob.Error()
+	} else if detail != nil {
+		masterMeta.Detail = detail
 	}
 }
 

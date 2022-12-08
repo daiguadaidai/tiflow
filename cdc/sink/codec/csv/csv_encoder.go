@@ -77,7 +77,6 @@ func (b *BatchEncoder) Build() (messages []*common.Message) {
 		}
 		b.valueBuf.Reset()
 		b.callbackBuf = make([]func(), 0)
-		b.batchSize = 0
 	}
 	return []*common.Message{ret}
 }

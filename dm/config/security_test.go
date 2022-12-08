@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/pingcap/tiflow/dm/config/security"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
@@ -87,7 +86,7 @@ func (c *testTLSConfig) SetupSuite() {
 }
 
 func (c *testTLSConfig) TestLoadAndClearContent() {
-	s := &security.Security{
+	s := &Security{
 		SSLCA:   caFilePath,
 		SSLCert: certFilePath,
 		SSLKey:  keyFilePath,
@@ -154,7 +153,7 @@ mysql-instances:
 }
 
 func (c *testTLSConfig) TestClone() {
-	s := &security.Security{
+	s := &Security{
 		SSLCA:         "a",
 		SSLCert:       "b",
 		SSLKey:        "c",
@@ -173,7 +172,7 @@ func (c *testTLSConfig) TestClone() {
 }
 
 func (c *testTLSConfig) TestLoadDumpTLSContent() {
-	s := &security.Security{
+	s := &Security{
 		SSLCA:   caFilePath,
 		SSLCert: certFilePath,
 		SSLKey:  keyFilePath,

@@ -27,7 +27,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	dmysql "github.com/go-sql-driver/mysql"
 	"github.com/pingcap/errors"
-	"github.com/pingcap/failpoint"
 	"github.com/pingcap/log"
 	"github.com/pingcap/tidb/infoschema"
 	"github.com/pingcap/tidb/parser/mysql"
@@ -71,16 +70,6 @@ func newMySQLBackend(
 		return nil, err
 	}
 	return backends[0], nil
-}
-
-func newTestMockDB(t *testing.T) (db *sql.DB, mock sqlmock.Sqlmock) {
-	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
-	mock.ExpectQuery("select tidb_version()").WillReturnError(&dmysql.MySQLError{
-		Number:  1305,
-		Message: "FUNCTION test.tidb_version does not exist",
-	})
-	require.Nil(t, err)
-	return
 }
 
 func TestPrepareDML(t *testing.T) {
@@ -180,7 +169,8 @@ func TestAdjustSQLMode(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectClose()
 		return db, nil
 	}
@@ -271,7 +261,8 @@ func TestNewMySQLBackendExecDML(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("INSERT INTO `s1`.`t1`(`a`,`b`) VALUES (?,?),(?,?)").
 			WithArgs(1, "test", 2, "test").
@@ -393,7 +384,8 @@ func TestExecDMLRollbackErrDatabaseNotExists(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("REPLACE INTO `s1`.`t1`(`a`) VALUES (?),(?)").
 			WithArgs(1, 2).
@@ -464,7 +456,8 @@ func TestExecDMLRollbackErrTableNotExists(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("REPLACE INTO `s1`.`t1`(`a`) VALUES (?),(?)").
 			WithArgs(1, 2).
@@ -535,7 +528,8 @@ func TestExecDMLRollbackErrRetryable(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		for i := 0; i < 2; i++ {
 			mock.ExpectBegin()
 			mock.ExpectExec("REPLACE INTO `s1`.`t1`(`a`) VALUES (?),(?)").
@@ -598,7 +592,8 @@ func TestMysqlSinkNotRetryErrDupEntry(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("INSERT INTO `s1`.`t1`(`a`) VALUES (?)").
 			WithArgs(1).
@@ -649,8 +644,9 @@ func TestNewMySQLBackend(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 		mock.ExpectClose()
+		require.Nil(t, err)
 		return db, nil
 	}
 
@@ -684,8 +680,9 @@ func TestNewMySQLBackendWithIPv6Address(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 		mock.ExpectClose()
+		require.Nil(t, err)
 		return db, nil
 	}
 
@@ -715,8 +712,9 @@ func TestGBKSupported(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
 		mock.ExpectClose()
+		require.Nil(t, err)
 		return db, nil
 	}
 
@@ -775,7 +773,8 @@ func TestMySQLSinkExecDMLError(t *testing.T) {
 		}
 
 		// normal db
-		db, mock := newTestMockDB(t)
+		db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherEqual))
+		require.Nil(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("INSERT INTO `s1`.`t1`(`a`,`b`) VALUES (?,?)").WillDelayFor(1 * time.Second).
 			WillReturnError(&dmysql.MySQLError{Number: mysql.ErrNoSuchTable})
@@ -1445,15 +1444,4 @@ func TestPrepareBatchDMLs(t *testing.T) {
 		dmls := ms.prepareDMLs()
 		require.Equal(t, tc.expected, dmls)
 	}
-}
-
-func TestNetworkPartition(t *testing.T) {
-	ctx := context.Background()
-	ms := newMySQLBackendWithoutDB(ctx)
-	ms.cfg.WriteTimeout = "1s"
-	_ = failpoint.Enable("github.com/pingcap/tiflow/cdc/sinkv2/eventsink/txn/mysql/MySQLSinkHangLongTime", "return")
-	defer failpoint.Disable("github.com/pingcap/tiflow/cdc/sinkv2/eventsink/txn/mysql/MySQLSinkHangLongTime")
-
-	err := ms.execDMLWithMaxRetries(ctx, &preparedDMLs{})
-	require.Equal(t, context.Canceled, err)
 }

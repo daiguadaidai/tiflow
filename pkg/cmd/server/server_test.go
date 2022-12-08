@@ -179,9 +179,8 @@ func TestParseCfg(t *testing.T) {
 			TableActor: &config.TableActorConfig{
 				EventBatchSize: 32,
 			},
-			EnableDBSorter:      true,
-			EnableNewScheduler:  true,
-			EnablePullBasedSink: true,
+			EnableDBSorter:     true,
+			EnableNewScheduler: true,
 			DB: &config.DBConfig{
 				Count:                       8,
 				Concurrency:                 128,
@@ -211,7 +210,6 @@ func TestParseCfg(t *testing.T) {
 				MaxTaskConcurrency:   10,
 				CheckBalanceInterval: 60000000000,
 				AddTableBatchSize:    50,
-				RegionPerSpan:        0,
 			},
 			EnableNewSink: true,
 		},
@@ -255,8 +253,7 @@ sort-dir = "/tmp/just_a_test"
 region-retry-duration = "3s"
 
 [debug]
-enable-db-sorter = true
-enable-pull-based-sink = true
+enable-db-sorter = false
 [debug.db]
 count = 5
 concurrency = 6
@@ -337,9 +334,8 @@ check-balance-interval = "10s"
 			TableActor: &config.TableActorConfig{
 				EventBatchSize: 32,
 			},
-			EnableDBSorter:      true,
-			EnablePullBasedSink: true,
-			EnableNewScheduler:  true,
+			EnableDBSorter:     false,
+			EnableNewScheduler: true,
 			DB: &config.DBConfig{
 				Count:                       5,
 				Concurrency:                 6,
@@ -368,7 +364,6 @@ check-balance-interval = "10s"
 				MaxTaskConcurrency:   11,
 				CheckBalanceInterval: config.TomlDuration(10 * time.Second),
 				AddTableBatchSize:    50,
-				RegionPerSpan:        0,
 			},
 			EnableNewSink: true,
 		},
@@ -485,9 +480,8 @@ cert-allowed-cn = ["dd","ee"]
 			TableActor: &config.TableActorConfig{
 				EventBatchSize: 32,
 			},
-			EnableDBSorter:      true,
-			EnableNewScheduler:  true,
-			EnablePullBasedSink: true,
+			EnableDBSorter:     true,
+			EnableNewScheduler: true,
 			DB: &config.DBConfig{
 				Count:                       8,
 				Concurrency:                 128,
@@ -517,7 +511,6 @@ cert-allowed-cn = ["dd","ee"]
 				MaxTaskConcurrency:   10,
 				CheckBalanceInterval: 60000000000,
 				AddTableBatchSize:    50,
-				RegionPerSpan:        0,
 			},
 			EnableNewSink: true,
 		},
@@ -551,9 +544,8 @@ unknown3 = 3
 		TableActor: &config.TableActorConfig{
 			EventBatchSize: 32,
 		},
-		EnableDBSorter:      true,
-		EnableNewScheduler:  true,
-		EnablePullBasedSink: true,
+		EnableDBSorter:     true,
+		EnableNewScheduler: true,
 		DB: &config.DBConfig{
 			Count:                       8,
 			Concurrency:                 128,
@@ -583,7 +575,6 @@ unknown3 = 3
 			MaxTaskConcurrency:   10,
 			CheckBalanceInterval: 60000000000,
 			AddTableBatchSize:    50,
-			RegionPerSpan:        0,
 		},
 		EnableNewSink: true,
 	}, o.serverConfig.Debug)

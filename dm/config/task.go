@@ -30,11 +30,9 @@ import (
 	"github.com/dustin/go-humanize"
 	bf "github.com/pingcap/tidb-tools/pkg/binlog-filter"
 	"github.com/pingcap/tidb-tools/pkg/column-mapping"
-	"github.com/pingcap/tidb/br/pkg/lightning/config"
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/util/filter"
 	router "github.com/pingcap/tidb/util/table-router"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
 	"github.com/pingcap/tiflow/dm/pkg/log"
 	"github.com/pingcap/tiflow/dm/pkg/terror"
 	"github.com/pingcap/tiflow/dm/pkg/utils"
@@ -252,50 +250,34 @@ const (
 	LoadModePhysical = "physical"
 )
 
-// LogicalDuplicateResolveType defines the duplication resolution when meet duplicate rows for logical import.
-type LogicalDuplicateResolveType string
+// DuplicateResolveType defines the duplication resolution when meet duplicate rows.
+type DuplicateResolveType string
 
 const (
 	// OnDuplicateReplace represents replace the old row with new data.
-	OnDuplicateReplace LogicalDuplicateResolveType = "replace"
+	OnDuplicateReplace DuplicateResolveType = "replace"
 	// OnDuplicateError represents return an error when meet duplicate row.
-	OnDuplicateError LogicalDuplicateResolveType = "error"
+	OnDuplicateError = "error"
 	// OnDuplicateIgnore represents ignore the new data when meet duplicate row.
-	OnDuplicateIgnore LogicalDuplicateResolveType = "ignore"
-)
-
-// PhysicalDuplicateResolveType defines the duplication resolution when meet duplicate rows for physical import.
-type PhysicalDuplicateResolveType string
-
-const (
-	// OnDuplicateNone represents do nothing when meet duplicate row and the task will continue.
-	OnDuplicateNone PhysicalDuplicateResolveType = "none"
-	// OnDuplicateManual represents that task should be paused when meet duplicate row to let user handle it manually.
-	OnDuplicateManual PhysicalDuplicateResolveType = "manual"
+	OnDuplicateIgnore = "ignore"
 )
 
 // LoaderConfig represents loader process unit's specific config.
 type LoaderConfig struct {
-	PoolSize           int      `yaml:"pool-size" toml:"pool-size" json:"pool-size"`
-	Dir                string   `yaml:"dir" toml:"dir" json:"dir"`
-	SortingDirPhysical string   `yaml:"sorting-dir-physical" toml:"sorting-dir-physical" json:"sorting-dir-physical"`
-	SQLMode            string   `yaml:"-" toml:"-" json:"-"` // wrote by dump unit (DM op) or jobmaster (DM in engine)
-	ImportMode         LoadMode `yaml:"import-mode" toml:"import-mode" json:"import-mode"`
-	// deprecated, use OnDuplicateLogical instead.
-	OnDuplicate        LogicalDuplicateResolveType `yaml:"on-duplicate" toml:"on-duplicate" json:"on-duplicate"`
-	OnDuplicateLogical LogicalDuplicateResolveType `yaml:"on-duplicate-logical" toml:"on-duplicate-logical" json:"on-duplicate-logical"`
-	// TODO: OnDuplicatePhysical has no effects now
-	OnDuplicatePhysical PhysicalDuplicateResolveType `yaml:"on-duplicate-physical" toml:"on-duplicate-physical" json:"on-duplicate-physical"`
-	DiskQuotaPhysical   config.ByteSize              `yaml:"disk-quota-physical" toml:"disk-quota-physical" json:"disk-quota-physical"`
+	PoolSize    int                  `yaml:"pool-size" toml:"pool-size" json:"pool-size"`
+	Dir         string               `yaml:"dir" toml:"dir" json:"dir"`
+	SQLMode     string               `yaml:"-" toml:"-" json:"-"` // wrote by dump unit (DM op) or jobmaster (DM in engine)
+	ImportMode  LoadMode             `yaml:"import-mode" toml:"import-mode" json:"import-mode"`
+	OnDuplicate DuplicateResolveType `yaml:"on-duplicate" toml:"on-duplicate" json:"on-duplicate"`
 }
 
 // DefaultLoaderConfig return default loader config for task.
 func DefaultLoaderConfig() LoaderConfig {
 	return LoaderConfig{
-		PoolSize:           defaultPoolSize,
-		Dir:                defaultDir,
-		ImportMode:         LoadModeLogical,
-		OnDuplicateLogical: OnDuplicateReplace,
+		PoolSize:    defaultPoolSize,
+		Dir:         defaultDir,
+		ImportMode:  LoadModeLogical,
+		OnDuplicate: OnDuplicateReplace,
 	}
 }
 
@@ -326,35 +308,12 @@ func (m *LoaderConfig) adjust() error {
 		return terror.ErrConfigInvalidLoadMode.Generate(m.ImportMode)
 	}
 
-	if m.PoolSize == 0 {
-		m.PoolSize = defaultPoolSize
+	if m.OnDuplicate == "" {
+		m.OnDuplicate = OnDuplicateReplace
 	}
-
-	if m.Dir != "" && m.SortingDirPhysical == "" {
-		m.SortingDirPhysical = m.Dir
-	}
-
-	if m.OnDuplicateLogical == "" && m.OnDuplicate != "" {
-		m.OnDuplicateLogical = m.OnDuplicate
-	}
-	if m.OnDuplicateLogical == "" {
-		m.OnDuplicateLogical = OnDuplicateReplace
-	}
-	m.OnDuplicateLogical = LogicalDuplicateResolveType(strings.ToLower(string(m.OnDuplicateLogical)))
-	switch m.OnDuplicateLogical {
-	case OnDuplicateReplace, OnDuplicateError, OnDuplicateIgnore:
-	default:
-		return terror.ErrConfigInvalidDuplicateResolution.Generate(m.OnDuplicateLogical)
-	}
-
-	if m.OnDuplicatePhysical == "" {
-		m.OnDuplicatePhysical = OnDuplicateNone
-	}
-	m.OnDuplicatePhysical = PhysicalDuplicateResolveType(strings.ToLower(string(m.OnDuplicatePhysical)))
-	switch m.OnDuplicatePhysical {
-	case OnDuplicateNone, OnDuplicateManual:
-	default:
-		return terror.ErrConfigInvalidPhysicalDuplicateResolution.Generate(m.OnDuplicatePhysical)
+	m.OnDuplicate = DuplicateResolveType(strings.ToLower(string(m.OnDuplicate)))
+	if m.OnDuplicate != OnDuplicateReplace && m.OnDuplicate != OnDuplicateError && m.OnDuplicate != OnDuplicateIgnore {
+		return terror.ErrConfigInvalidDuplicateResolution.Generate(m.OnDuplicate)
 	}
 
 	return nil
@@ -497,7 +456,7 @@ type TaskConfig struct {
 	// "strict" will add default collation as upstream, and downstream will occur error when downstream don't support
 	CollationCompatible string `yaml:"collation_compatible" toml:"collation_compatible" json:"collation_compatible"`
 
-	TargetDB *dbconfig.DBConfig `yaml:"target-database" toml:"target-database" json:"target-database"`
+	TargetDB *DBConfig `yaml:"target-database" toml:"target-database" json:"target-database"`
 
 	MySQLInstances []*MySQLInstance `yaml:"mysql-instances" toml:"mysql-instances" json:"mysql-instances"`
 
@@ -1018,7 +977,7 @@ func checkDuplicateString(ruleNames []string) []string {
 }
 
 // AdjustTargetDBSessionCfg adjust session cfg of TiDB.
-func AdjustTargetDBSessionCfg(dbConfig *dbconfig.DBConfig, version *semver.Version) {
+func AdjustTargetDBSessionCfg(dbConfig *DBConfig, version *semver.Version) {
 	lowerMap := make(map[string]string, len(dbConfig.Session))
 	for k, v := range dbConfig.Session {
 		lowerMap[strings.ToLower(k)] = v
@@ -1030,6 +989,24 @@ func AdjustTargetDBSessionCfg(dbConfig *dbconfig.DBConfig, version *semver.Versi
 		}
 	}
 	dbConfig.Session = lowerMap
+}
+
+// AdjustDBTimeZone force adjust session `time_zone`.
+func AdjustDBTimeZone(config *DBConfig, timeZone string) {
+	for k, v := range config.Session {
+		if strings.ToLower(k) == "time_zone" {
+			if v != timeZone {
+				log.L().Warn("session variable 'time_zone' is overwritten by task config's timezone",
+					zap.String("time_zone", config.Session[k]))
+				config.Session[k] = timeZone
+			}
+			return
+		}
+	}
+	if config.Session == nil {
+		config.Session = make(map[string]string, 1)
+	}
+	config.Session["time_zone"] = timeZone
 }
 
 var (
@@ -1199,7 +1176,7 @@ type TaskConfigForDowngrade struct {
 	HeartbeatReportInterval int                                  `yaml:"heartbeat-report-interval"`
 	Timezone                string                               `yaml:"timezone"`
 	CaseSensitive           bool                                 `yaml:"case-sensitive"`
-	TargetDB                *dbconfig.DBConfig                   `yaml:"target-database"`
+	TargetDB                *DBConfig                            `yaml:"target-database"`
 	OnlineDDLScheme         string                               `yaml:"online-ddl-scheme"`
 	Routes                  map[string]*router.TableRule         `yaml:"routes"`
 	Filters                 map[string]*bf.BinlogEventRule       `yaml:"filters"`

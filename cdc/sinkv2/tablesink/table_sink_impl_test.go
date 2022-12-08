@@ -276,7 +276,8 @@ func TestClose(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		tb.Close(context.Background())
+		err := tb.Close(context.Background())
+		require.NoError(t, err, "close should not return error")
 		wg.Done()
 	}()
 	require.Eventually(t, func() bool {
@@ -306,13 +307,14 @@ func TestCloseCancellable(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		tb.Close(ctx)
+		err := tb.Close(ctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 		wg.Done()
 	}()
-	wg.Wait()
 	require.Eventually(t, func() bool {
-		return state.TableSinkStopped == tb.state.Load()
-	}, time.Second, time.Millisecond*10, "table should be stopped")
+		return state.TableSinkStopping == tb.state.Load()
+	}, time.Second, time.Millisecond*10, "table should be stopping")
+	wg.Wait()
 }
 
 func TestCloseReentrant(t *testing.T) {
@@ -331,14 +333,16 @@ func TestCloseReentrant(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
-		tb.Close(ctx)
+		err := tb.Close(ctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 		wg.Done()
 	}()
-	wg.Wait()
 	require.Eventually(t, func() bool {
-		return state.TableSinkStopped == tb.state.Load()
-	}, 5*time.Second, time.Millisecond*10, "table should be stopped")
-	tb.Close(ctx)
+		return state.TableSinkStopping == tb.state.Load()
+	}, time.Second, time.Millisecond*10, "table should be stopping")
+	wg.Wait()
+	err = tb.Close(ctx)
+	require.Nil(t, err, "table should not be stopping again")
 }
 
 // TestCheckpointTsFrozenWhenStopping make sure wo do not update checkpoint
@@ -360,7 +364,8 @@ func TestCheckpointTsFrozenWhenStopping(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tb.Close(ctx)
+		err := tb.Close(ctx)
+		require.ErrorIs(t, err, context.DeadlineExceeded)
 	}()
 	require.Eventually(t, func() bool {
 		return state.TableSinkStopping == tb.state.Load()
@@ -373,4 +378,6 @@ func TestCheckpointTsFrozenWhenStopping(t *testing.T) {
 		require.Equal(t, currentTs, tb.GetCheckpointTs(), "checkpointTs should not be updated")
 	}()
 	wg.Wait()
+	err = tb.Close(ctx)
+	require.Nil(t, err, "table should not be stopping again")
 }

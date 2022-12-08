@@ -14,7 +14,6 @@
 package metrics
 
 import (
-	"github.com/pingcap/tiflow/cdc/sinkv2/metrics/cloudstorage"
 	"github.com/pingcap/tiflow/cdc/sinkv2/metrics/mq"
 	"github.com/pingcap/tiflow/cdc/sinkv2/metrics/txn"
 	"github.com/prometheus/client_golang/prometheus"
@@ -74,5 +73,4 @@ func InitMetrics(registry *prometheus.Registry) {
 
 	txn.InitMetrics(registry)
 	mq.InitMetrics(registry)
-	cloudstorage.InitMetrics(registry)
 }

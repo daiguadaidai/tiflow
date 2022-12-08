@@ -552,7 +552,7 @@ func (t *tableActor) RemainEvents() int64 {
 
 // for ut
 var startPuller = func(t *tableActor, ctx *actorNodeContext) error {
-	return t.pullerNode.startWithSorterNode(ctx, t.upstream, t.wg, t.sortNode, t.replicaConfig.BDRMode)
+	return t.pullerNode.startWithSorterNode(ctx, t.upstream, t.wg, t.sortNode)
 }
 
 var startSorter = func(t *tableActor, ctx *actorNodeContext) error {

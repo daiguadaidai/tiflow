@@ -16,12 +16,15 @@ package utils
 import (
 	"testing"
 
+	. "github.com/pingcap/check"
 	"github.com/stretchr/testify/require"
 )
 
-func TestFilenameCmp(t *testing.T) {
-	t.Parallel()
+var _ = Suite(&testFilenameSuite{})
 
+type testFilenameSuite struct{}
+
+func (t *testFilenameSuite) TestFilenameCmp(c *C) {
 	f1 := Filename{
 		BaseName: "mysql-bin",
 		Seq:      "000001",
@@ -43,26 +46,24 @@ func TestFilenameCmp(t *testing.T) {
 		SeqInt64: 1,
 	}
 
-	require.True(t, f1.LessThan(f2))
-	require.False(t, f1.GreaterThanOrEqualTo(f2))
-	require.False(t, f1.GreaterThan(f2))
+	c.Assert(f1.LessThan(f2), IsTrue)
+	c.Assert(f1.GreaterThanOrEqualTo(f2), IsFalse)
+	c.Assert(f1.GreaterThan(f2), IsFalse)
 
-	require.False(t, f2.LessThan(f1))
-	require.True(t, f2.GreaterThanOrEqualTo(f1))
-	require.True(t, f2.GreaterThan(f1))
+	c.Assert(f2.LessThan(f1), IsFalse)
+	c.Assert(f2.GreaterThanOrEqualTo(f1), IsTrue)
+	c.Assert(f2.GreaterThan(f1), IsTrue)
 
-	require.False(t, f1.LessThan(f3))
-	require.True(t, f1.GreaterThanOrEqualTo(f3))
-	require.False(t, f1.GreaterThan(f3))
+	c.Assert(f1.LessThan(f3), IsFalse)
+	c.Assert(f1.GreaterThanOrEqualTo(f3), IsTrue)
+	c.Assert(f1.GreaterThan(f3), IsFalse)
 
-	require.False(t, f1.LessThan(f4))
-	require.False(t, f1.GreaterThanOrEqualTo(f4))
-	require.False(t, f1.GreaterThan(f4))
+	c.Assert(f1.LessThan(f4), IsFalse)
+	c.Assert(f1.GreaterThanOrEqualTo(f4), IsFalse)
+	c.Assert(f1.GreaterThan(f4), IsFalse)
 }
 
-func TestParseFilenameAndGetFilenameIndex(t *testing.T) {
-	t.Parallel()
-
+func (t *testFilenameSuite) TestParseFilenameAndGetFilenameIndex(c *C) {
 	cases := []struct {
 		filenameStr string
 		filename    Filename
@@ -126,25 +127,23 @@ func TestParseFilenameAndGetFilenameIndex(t *testing.T) {
 	for _, cs := range cases {
 		f, err := ParseFilename(cs.filenameStr)
 		if len(cs.errMsgReg) > 0 {
-			require.Regexp(t, cs.errMsgReg, err)
+			c.Assert(err, ErrorMatches, cs.errMsgReg)
 		} else {
-			require.NoError(t, err)
+			c.Assert(err, IsNil)
 		}
-		require.Equal(t, cs.filename, f)
+		c.Assert(f, DeepEquals, cs.filename)
 
 		idx, err := GetFilenameIndex(cs.filenameStr)
 		if len(cs.errMsgReg) > 0 {
-			require.Regexp(t, cs.errMsgReg, err)
+			c.Assert(err, ErrorMatches, cs.errMsgReg)
 		} else {
-			require.NoError(t, err)
+			c.Assert(err, IsNil)
 		}
-		require.Equal(t, cs.index, idx)
+		c.Assert(idx, Equals, cs.index)
 	}
 }
 
-func TestVerifyFilename(t *testing.T) {
-	t.Parallel()
-
+func (t *testFilenameSuite) TestVerifyFilename(c *C) {
 	cases := []struct {
 		filename string
 		valid    bool
@@ -185,13 +184,11 @@ func TestVerifyFilename(t *testing.T) {
 	}
 
 	for _, cs := range cases {
-		require.Equal(t, cs.valid, VerifyFilename(cs.filename))
+		c.Assert(VerifyFilename(cs.filename), Equals, cs.valid)
 	}
 }
 
-func TestConstructFilename(t *testing.T) {
-	t.Parallel()
-
+func (t *testFilenameSuite) TestConstructFilename(c *C) {
 	cases := []struct {
 		baseName string
 		seq      string
@@ -205,13 +202,11 @@ func TestConstructFilename(t *testing.T) {
 	}
 
 	for _, cs := range cases {
-		require.Equal(t, cs.filename, ConstructFilename(cs.baseName, cs.seq))
+		c.Assert(ConstructFilename(cs.baseName, cs.seq), Equals, cs.filename)
 	}
 }
 
-func TestConstructFilenameWithUUIDSuffix(t *testing.T) {
-	t.Parallel()
-
+func (t *testFilenameSuite) TestConstructFilenameWithUUIDSuffix(c *C) {
 	cases := []struct {
 		originalName   Filename
 		suffix         string
@@ -225,12 +220,12 @@ func TestConstructFilenameWithUUIDSuffix(t *testing.T) {
 	}
 
 	for _, cs := range cases {
-		require.Equal(t, cs.withSuffixName, ConstructFilenameWithUUIDSuffix(cs.originalName, cs.suffix))
+		c.Assert(ConstructFilenameWithUUIDSuffix(cs.originalName, cs.suffix), Equals, cs.withSuffixName)
 		baseName, uuidSuffix, seq, err := SplitFilenameWithUUIDSuffix(cs.withSuffixName)
-		require.NoError(t, err)
-		require.Equal(t, cs.originalName.BaseName, baseName)
-		require.Equal(t, cs.suffix, uuidSuffix)
-		require.Equal(t, cs.originalName.Seq, seq)
+		c.Assert(err, IsNil)
+		c.Assert(baseName, Equals, cs.originalName.BaseName)
+		c.Assert(uuidSuffix, Equals, cs.suffix)
+		c.Assert(seq, Equals, cs.originalName.Seq)
 	}
 
 	invalidFileName := []string{
@@ -243,13 +238,11 @@ func TestConstructFilenameWithUUIDSuffix(t *testing.T) {
 
 	for _, fileName := range invalidFileName {
 		_, _, _, err := SplitFilenameWithUUIDSuffix(fileName)
-		require.Regexp(t, ".*invalid binlog filename with uuid suffix.*", err)
+		c.Assert(err, ErrorMatches, ".*invalid binlog filename with uuid suffix.*")
 	}
 }
 
 func TestExtractRealName(t *testing.T) {
-	t.Parallel()
-
 	cases := map[string]string{
 		"mysql-bin.000001":        "mysql-bin.000001",
 		"mysql-bin.000001|":       "mysql-bin.000001|", // should not happen in real case, just for test

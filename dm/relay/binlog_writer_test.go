@@ -17,27 +17,21 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"testing"
+	"strings"
 
+	. "github.com/pingcap/check"
 	"github.com/pingcap/tiflow/dm/pkg/log"
-	"github.com/pingcap/tiflow/dm/pkg/terror"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/suite"
 )
 
-type testBinlogWriterSuite struct {
-	suite.Suite
-}
+var _ = Suite(&testBinlogWriterSuite{})
 
-func TestBinlogWriterSuite(t *testing.T) {
-	suite.Run(t, new(testBinlogWriterSuite))
-}
+type testBinlogWriterSuite struct{}
 
-func (t *testBinlogWriterSuite) TestWrite() {
-	dir := t.T().TempDir()
+func (t *testBinlogWriterSuite) TestWrite(c *C) {
+	dir := c.MkDir()
 	uuid := "3ccc475b-2343-11e7-be21-6c0b84d59f30.000001"
 	binlogDir := filepath.Join(dir, uuid)
-	require.NoError(t.T(), os.Mkdir(binlogDir, 0o755))
+	c.Assert(os.Mkdir(binlogDir, 0o755), IsNil)
 
 	filename := "test-mysql-bin.000001"
 	var (
@@ -47,87 +41,64 @@ func (t *testBinlogWriterSuite) TestWrite() {
 
 	{
 		w := NewBinlogWriter(log.L(), dir)
-		require.NotNil(t.T(), w)
-		require.NoError(t.T(), w.Open(uuid, filename))
+		c.Assert(w, NotNil)
+		c.Assert(w.Open(uuid, filename), IsNil)
 		fwStatus := w.Status()
-		require.Equal(t.T(), filename, fwStatus.Filename)
-		require.Equal(t.T(), int64(allData.Len()), fwStatus.Offset)
+		c.Assert(fwStatus.Filename, Equals, filename)
+		c.Assert(fwStatus.Offset, Equals, int64(allData.Len()))
 		fwStatusStr := fwStatus.String()
-		require.Contains(t.T(), fwStatusStr, filename)
-		require.NoError(t.T(), w.Close())
+		c.Assert(strings.Contains(fwStatusStr, "filename"), IsTrue)
+		c.Assert(w.Close(), IsNil)
 	}
 
 	{
 		// not opened
 		w := NewBinlogWriter(log.L(), dir)
 		err := w.Write(data1)
-		require.Contains(t.T(), err.Error(), "no underlying writer opened")
+		c.Assert(err, ErrorMatches, "*not opened")
 
 		// open non exist dir
 		err = w.Open("not-exist-uuid", "bin.000001")
-		require.Contains(t.T(), err.Error(), "no such file or directory")
+		c.Assert(err, ErrorMatches, "*no such file or directory")
 	}
 
 	{
 		// normal call flow
 		w := NewBinlogWriter(log.L(), dir)
 		err := w.Open(uuid, filename)
-		require.NoError(t.T(), err)
-		require.NotNil(t.T(), w.file)
-		require.Equal(t.T(), filename, w.filename.Load())
-		require.Equal(t.T(), int64(0), w.offset.Load())
+		c.Assert(err, IsNil)
+		c.Assert(w.file, NotNil)
+		c.Assert(w.filename, Equals, filename)
+		c.Assert(w.offset.Load(), Equals, int64(0))
 
 		err = w.Write(data1)
-		require.NoError(t.T(), err)
-		err = w.Flush()
-		require.NoError(t.T(), err)
+		c.Assert(err, IsNil)
 		allData.Write(data1)
 
 		fwStatus := w.Status()
-		require.Equal(t.T(), fwStatus.Filename, w.filename.Load())
-		require.Equal(t.T(), int64(len(data1)), fwStatus.Offset)
+		c.Assert(fwStatus.Filename, Equals, filename)
+		c.Assert(fwStatus.Offset, Equals, int64(len(data1)))
 
 		// write data again
 		data2 := []byte("another-data")
 		err = w.Write(data2)
-		require.NoError(t.T(), err)
+		c.Assert(err, IsNil)
 		allData.Write(data2)
 
-		require.LessOrEqual(t.T(), int64(allData.Len()), w.offset.Load())
+		c.Assert(w.offset.Load(), Equals, int64(allData.Len()))
 
 		err = w.Close()
-		require.NoError(t.T(), err)
-		require.Nil(t.T(), w.file)
-		require.Equal(t.T(), "", w.filename.Load())
-		require.Equal(t.T(), int64(0), w.offset.Load())
+		c.Assert(err, IsNil)
+		c.Assert(w.file, IsNil)
+		c.Assert(w.filename, Equals, "")
+		c.Assert(w.offset.Load(), Equals, int64(0))
+
+		c.Assert(w.Close(), IsNil) // noop
 
 		// try to read the data back
 		fullName := filepath.Join(binlogDir, filename)
 		dataInFile, err := os.ReadFile(fullName)
-		require.NoError(t.T(), err)
-		require.Equal(t.T(), allData.Bytes(), dataInFile)
-	}
-
-	{
-		// cover for error
-		w := NewBinlogWriter(log.L(), dir)
-		err := w.Open(uuid, filename)
-		require.NoError(t.T(), err)
-		require.NotNil(t.T(), w.file)
-
-		err = w.Write(data1)
-		require.NoError(t.T(), err)
-		err = w.Flush()
-		require.NoError(t.T(), err)
-
-		require.NoError(t.T(), w.file.Close())
-		// write data again
-		data2 := []byte("another-data")
-		// we cannot determine the error is caused by `Write` or `Flush`
-		// nolint:errcheck
-		w.Write(data2)
-		// nolint:errcheck
-		w.Flush()
-		require.True(t.T(), terror.ErrBinlogWriterWriteDataLen.Equal(w.Close()))
+		c.Assert(err, IsNil)
+		c.Assert(dataInFile, DeepEquals, allData.Bytes())
 	}
 }

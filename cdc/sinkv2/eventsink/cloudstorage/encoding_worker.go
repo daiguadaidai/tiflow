@@ -20,6 +20,7 @@ import (
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/cdc/model"
 	"github.com/pingcap/tiflow/cdc/sink/codec"
+	"github.com/pingcap/tiflow/pkg/chann"
 	"go.uber.org/zap"
 )
 
@@ -30,9 +31,8 @@ type encodingWorker struct {
 	changeFeedID model.ChangeFeedID
 	wg           sync.WaitGroup
 	encoder      codec.EventBatchEncoder
+	writer       *dmlWriter
 	isClosed     uint64
-	inputCh      chan eventFragment
-	defragmenter *defragmenter
 	errCh        chan<- error
 }
 
@@ -40,21 +40,19 @@ func newEncodingWorker(
 	workerID int,
 	changefeedID model.ChangeFeedID,
 	encoder codec.EventBatchEncoder,
-	inputCh chan eventFragment,
-	defragmenter *defragmenter,
+	writer *dmlWriter,
 	errCh chan<- error,
 ) *encodingWorker {
 	return &encodingWorker{
 		id:           workerID,
 		changeFeedID: changefeedID,
 		encoder:      encoder,
-		inputCh:      inputCh,
-		defragmenter: defragmenter,
+		writer:       writer,
 		errCh:        errCh,
 	}
 }
 
-func (w *encodingWorker) run(ctx context.Context) {
+func (w *encodingWorker) run(ctx context.Context, msgChan *chann.Chann[eventFragment]) {
 	w.wg.Add(1)
 	go func() {
 		log.Debug("encoding worker started", zap.Int("workerID", w.id),
@@ -65,7 +63,7 @@ func (w *encodingWorker) run(ctx context.Context) {
 			select {
 			case <-ctx.Done():
 				return
-			case frag, ok := <-w.inputCh:
+			case frag, ok := <-msgChan.Out():
 				if !ok || atomic.LoadUint64(&w.isClosed) == 1 {
 					return
 				}
@@ -99,8 +97,7 @@ func (w *encodingWorker) encodeEvents(ctx context.Context, frag eventFragment) e
 
 	msgs := w.encoder.Build()
 	frag.encodedMsgs = msgs
-	w.defragmenter.registerFrag(frag)
-
+	w.writer.dispatchFragToDMLWorker(frag)
 	return nil
 }
 

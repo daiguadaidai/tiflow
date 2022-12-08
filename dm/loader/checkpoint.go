@@ -204,7 +204,7 @@ func (cp *RemoteCheckPoint) Load(tctx *tcontext.Context) error {
 	for rows.Next() {
 		err := rows.Scan(&filename, &schema, &table, &offset, &endPos)
 		if err != nil {
-			return terror.DBErrorAdapt(err, cp.conn.Scope(), terror.ErrDBDriverError)
+			return terror.WithScope(terror.DBErrorAdapt(err, terror.ErrDBDriverError), terror.ScopeDownstream)
 		}
 
 		if _, ok := cp.restoringFiles.pos[schema]; !ok {
@@ -218,7 +218,7 @@ func (cp *RemoteCheckPoint) Load(tctx *tcontext.Context) error {
 		restoringFiles[filename] = []int64{offset, endPos}
 	}
 
-	return terror.DBErrorAdapt(rows.Err(), cp.conn.Scope(), terror.ErrDBDriverError)
+	return terror.WithScope(terror.DBErrorAdapt(rows.Err(), terror.ErrDBDriverError), terror.ScopeDownstream)
 }
 
 // GetRestoringFileInfo implements CheckPoint.GetRestoringFileInfo.
@@ -450,11 +450,11 @@ func (cp *RemoteCheckPoint) Count(tctx *tcontext.Context) (int, error) {
 	for rows.Next() {
 		err = rows.Scan(&count)
 		if err != nil {
-			return 0, terror.DBErrorAdapt(err, cp.conn.Scope(), terror.ErrDBDriverError)
+			return 0, terror.WithScope(terror.DBErrorAdapt(err, terror.ErrDBDriverError), terror.ScopeDownstream)
 		}
 	}
 	if rows.Err() != nil {
-		return 0, terror.DBErrorAdapt(rows.Err(), cp.conn.Scope(), terror.ErrDBDriverError)
+		return 0, terror.WithScope(terror.DBErrorAdapt(rows.Err(), terror.ErrDBDriverError), terror.ScopeDownstream)
 	}
 	cp.logger.Debug("checkpoint record", zap.Int("count", count))
 	return count, nil
@@ -544,7 +544,7 @@ func (cp *LightningCheckpointList) Prepare(ctx context.Context) error {
 	if err != nil {
 		return terror.WithScope(terror.Annotate(err, "initialize connection when prepare"), terror.ScopeDownstream)
 	}
-	defer cp.db.ForceCloseConnWithoutErr(connection)
+	defer conn.CloseBaseConnWithoutErr(cp.db, connection)
 
 	createSchema := fmt.Sprintf("CREATE SCHEMA IF NOT EXISTS %s", cp.schema)
 	tctx := tcontext.NewContext(ctx, log.With(zap.String("job", "lightning-checkpoint")))
@@ -569,7 +569,7 @@ func (cp *LightningCheckpointList) RegisterCheckPoint(ctx context.Context) error
 	if err != nil {
 		return terror.WithScope(terror.Annotate(err, "initialize connection"), terror.ScopeDownstream)
 	}
-	defer cp.db.ForceCloseConnWithoutErr(connection)
+	defer conn.CloseBaseConnWithoutErr(cp.db, connection)
 
 	sql := fmt.Sprintf("INSERT IGNORE INTO %s (`task_name`, `source_name`) VALUES (?, ?)", cp.tableName)
 	cp.logger.Info("initial checkpoint record",
@@ -589,7 +589,7 @@ func (cp *LightningCheckpointList) UpdateStatus(ctx context.Context, status ligh
 	if err != nil {
 		return terror.WithScope(terror.Annotate(err, "initialize connection"), terror.ScopeDownstream)
 	}
-	defer cp.db.ForceCloseConnWithoutErr(connection)
+	defer conn.CloseBaseConnWithoutErr(cp.db, connection)
 
 	sql := fmt.Sprintf("UPDATE %s set status = ? WHERE `task_name` = ? AND `source_name` = ?", cp.tableName)
 	cp.logger.Info("update lightning loader status",
@@ -609,7 +609,7 @@ func (cp *LightningCheckpointList) taskStatus(ctx context.Context) (lightingLoad
 	if err != nil {
 		return lightningStatusInit, terror.WithScope(terror.Annotate(err, "initialize connection"), terror.ScopeDownstream)
 	}
-	defer cp.db.ForceCloseConnWithoutErr(connection)
+	defer conn.CloseBaseConnWithoutErr(cp.db, connection)
 
 	query := fmt.Sprintf("SELECT status FROM %s WHERE `task_name` = ? AND `source_name` = ?", cp.tableName)
 	tctx := tcontext.NewContext(ctx, log.With(zap.String("job", "lightning-checkpoint")))

@@ -136,7 +136,6 @@ func (ra *RedoApplier) consumeLogs(ctx context.Context) error {
 	lastResolvedTs := checkpointTs
 	cachedRows := make([]*model.RowChangedEvent, 0, emitBatch)
 	tableResolvedTsMap := make(map[model.TableID]model.Ts)
-	appliedLogCount := 0
 	for {
 		redoLogs, err := ra.rd.ReadNextLog(ctx, readBatch)
 		if err != nil {
@@ -145,7 +144,6 @@ func (ra *RedoApplier) consumeLogs(ctx context.Context) error {
 		if len(redoLogs) == 0 {
 			break
 		}
-		appliedLogCount += len(redoLogs)
 
 		for _, redoLog := range redoLogs {
 			tableID := redoLog.Row.Table.TableID
@@ -188,8 +186,6 @@ func (ra *RedoApplier) consumeLogs(ctx context.Context) error {
 			return err
 		}
 	}
-
-	log.Info("apply redo log finishes", zap.Int("appliedLogCount", appliedLogCount))
 	return errApplyFinished
 }
 

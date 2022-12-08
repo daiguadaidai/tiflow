@@ -328,7 +328,7 @@ func TestTableDetail(t *testing.T) {
 	var def TableDetail
 
 	tableInfo := &model.TableInfo{
-		Version: 100,
+		TableInfoVersion: 100,
 		TableName: model.TableName{
 			Schema:  "test",
 			Table:   "table1",

@@ -31,12 +31,10 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tidb/parser"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
+	"github.com/pingcap/tiflow/dm/config"
 	"github.com/pingcap/tiflow/dm/pkg/binlog/event"
 	"github.com/pingcap/tiflow/dm/pkg/conn"
-	tcontext "github.com/pingcap/tiflow/dm/pkg/context"
 	"github.com/pingcap/tiflow/dm/pkg/gtid"
-	"github.com/pingcap/tiflow/dm/pkg/log"
 	"github.com/pingcap/tiflow/dm/pkg/utils"
 )
 
@@ -55,7 +53,7 @@ func newRelayCfg(c *C, flavor string) *Config {
 		Flavor:     flavor,
 		RelayDir:   c.MkDir(),
 		ServerID:   12321,
-		From: dbconfig.DBConfig{
+		From: config.DBConfig{
 			Host:     dbCfg.Host,
 			Port:     dbCfg.Port,
 			User:     dbCfg.User,
@@ -71,7 +69,7 @@ func newRelayCfg(c *C, flavor string) *Config {
 	}
 }
 
-func getDBConfigForTest() *dbconfig.DBConfig {
+func getDBConfigForTest() *config.DBConfig {
 	host := os.Getenv("MYSQL_HOST")
 	if host == "" {
 		host = "127.0.0.1"
@@ -85,7 +83,7 @@ func getDBConfigForTest() *dbconfig.DBConfig {
 		user = "root"
 	}
 	password := os.Getenv("MYSQL_PSWD")
-	return &dbconfig.DBConfig{
+	return &config.DBConfig{
 		Host:     host,
 		Port:     port,
 		User:     user,
@@ -150,7 +148,7 @@ func (t *testRelaySuite) TestTryRecoverLatestFile(c *C) {
 		previousGTIDSetStr = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-14,53bfca22-690d-11e7-8a62-18ded7a37b78:1-495,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456"
 		latestGTIDStr1     = "3ccc475b-2343-11e7-be21-6c0b84d59f30:14"
 		latestGTIDStr2     = "53bfca22-690d-11e7-8a62-18ded7a37b78:495"
-		recoverGTIDSetStr  = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-18,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:1-456" // 406a3f61-690d-11e7-87c5-6c92bf46f384:123-456 --> 406a3f61-690d-11e7-87c5-6c92bf46f384:1-456
+		recoverGTIDSetStr  = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-17,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:1-456" // 406a3f61-690d-11e7-87c5-6c92bf46f384:123-456 --> 406a3f61-690d-11e7-87c5-6c92bf46f384:1-456
 		greaterGITDSetStr  = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-20,53bfca22-690d-11e7-8a62-18ded7a37b78:1-510,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456"
 		filename           = "mysql-bin.000001"
 		startPos           = gmysql.Position{Name: filename, Pos: 123}
@@ -159,12 +157,12 @@ func (t *testRelaySuite) TestTryRecoverLatestFile(c *C) {
 		relayCfg = newRelayCfg(c, gmysql.MySQLFlavor)
 		r        = NewRelay(relayCfg).(*Relay)
 	)
-	c.Assert(failpoint.Enable("github.com/pingcap/tiflow/dm/pkg/conn/GetGTIDPurged", `return("406a3f61-690d-11e7-87c5-6c92bf46f384:1-122")`), IsNil)
+	c.Assert(failpoint.Enable("github.com/pingcap/tiflow/dm/pkg/utils/GetGTIDPurged", `return("406a3f61-690d-11e7-87c5-6c92bf46f384:1-122")`), IsNil)
 	//nolint:errcheck
-	defer failpoint.Disable("github.com/pingcap/tiflow/dm/pkg/conn/GetGTIDPurged")
+	defer failpoint.Disable("github.com/pingcap/tiflow/dm/pkg/utils/GetGTIDPurged")
 	cfg := getDBConfigForTest()
 	conn.InitMockDB(c)
-	db, err := conn.GetUpstreamDB(cfg)
+	db, err := conn.DefaultDBProvider.Apply(cfg)
 	c.Assert(err, IsNil)
 	r.db = db
 	c.Assert(r.Init(context.Background()), IsNil)
@@ -246,7 +244,7 @@ func (t *testRelaySuite) TestTryRecoverMeta(c *C) {
 		latestGTIDStr1     = "3ccc475b-2343-11e7-be21-6c0b84d59f30:14"
 		latestGTIDStr2     = "53bfca22-690d-11e7-8a62-18ded7a37b78:495"
 		// if no @@gtid_purged, 406a3f61-690d-11e7-87c5-6c92bf46f384:123-456 should be not changed
-		recoverGTIDSetStr = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-18,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456"
+		recoverGTIDSetStr = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-17,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456"
 		filename          = "mysql-bin.000001"
 		startPos          = gmysql.Position{Name: filename, Pos: 123}
 
@@ -256,7 +254,7 @@ func (t *testRelaySuite) TestTryRecoverMeta(c *C) {
 	)
 	cfg := getDBConfigForTest()
 	conn.InitMockDB(c)
-	db, err := conn.GetUpstreamDB(cfg)
+	db, err := conn.DefaultDBProvider.Apply(cfg)
 	c.Assert(err, IsNil)
 	r.db = db
 	c.Assert(r.Init(context.Background()), IsNil)
@@ -286,9 +284,9 @@ func (t *testRelaySuite) TestTryRecoverMeta(c *C) {
 	f.Close()
 
 	// recover with empty GTIDs.
-	c.Assert(failpoint.Enable("github.com/pingcap/tiflow/dm/pkg/conn/GetGTIDPurged", `return("")`), IsNil)
+	c.Assert(failpoint.Enable("github.com/pingcap/tiflow/dm/pkg/utils/GetGTIDPurged", `return("")`), IsNil)
 	//nolint:errcheck
-	defer failpoint.Disable("github.com/pingcap/tiflow/dm/pkg/conn/GetGTIDPurged")
+	defer failpoint.Disable("github.com/pingcap/tiflow/dm/pkg/utils/GetGTIDPurged")
 	c.Assert(r.tryRecoverLatestFile(context.Background(), parser2), IsNil)
 	_, latestPos := r.meta.Pos()
 	c.Assert(latestPos, DeepEquals, gmysql.Position{Name: filename, Pos: g.LatestPos})
@@ -360,7 +358,6 @@ func genBinlogEventsWithGTIDs(c *C, flavor string, previousGTIDSet, latestGTID1,
 	// CREATE DATABASE/TABLE, 3 DDL
 	queries := []string{
 		"CREATE DATABASE `db`",
-		"COMMIT",
 		"CREATE TABLE `db`.`tbl1` (c1 INT)",
 		"CREATE TABLE `db`.`tbl2` (c1 INT)",
 	}
@@ -424,7 +421,7 @@ func (t *testRelaySuite) TestHandleEvent(c *C) {
 
 	cfg := getDBConfigForTest()
 	conn.InitMockDB(c)
-	db, err := conn.GetUpstreamDB(cfg)
+	db, err := conn.DefaultDBProvider.Apply(cfg)
 	c.Assert(err, IsNil)
 	r.db = db
 	c.Assert(r.Init(context.Background()), IsNil)
@@ -549,7 +546,7 @@ func (t *testRelaySuite) TestHandleEvent(c *C) {
 }
 
 func (t *testRelaySuite) TestReSetupMeta(c *C) {
-	ctx, cancel := context.WithTimeout(context.Background(), conn.DefaultDBTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), utils.DefaultDBTimeout)
 	defer cancel()
 
 	var (
@@ -558,7 +555,7 @@ func (t *testRelaySuite) TestReSetupMeta(c *C) {
 	)
 	cfg := getDBConfigForTest()
 	mockDB := conn.InitMockDB(c)
-	db, err := conn.GetUpstreamDB(cfg)
+	db, err := conn.DefaultDBProvider.Apply(cfg)
 	c.Assert(err, IsNil)
 	r.db = db
 	c.Assert(r.Init(context.Background()), IsNil)
@@ -573,7 +570,7 @@ func (t *testRelaySuite) TestReSetupMeta(c *C) {
 		r.db = nil
 	}()
 	mockGetServerUUID(mockDB)
-	uuid, err := conn.GetServerUUID(tcontext.NewContext(ctx, log.L()), r.db, r.cfg.Flavor)
+	uuid, err := utils.GetServerUUID(ctx, r.db.DB, r.cfg.Flavor)
 	c.Assert(err, IsNil)
 
 	// re-setup meta with start pos adjusted
@@ -816,7 +813,7 @@ func (t *testRelaySuite) TestRecoverMySQL(c *C) {
 	// expected latest pos/GTID set
 	expectedPos := gmysql.Position{Name: filename, Pos: uint32(len(baseData))}
 	// 3 DDL + 10 DML
-	expectedGTIDsStr := "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-18,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456,686e1ab6-c47e-11e7-a42c-6c92bf46f384:234-567"
+	expectedGTIDsStr := "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-17,53bfca22-690d-11e7-8a62-18ded7a37b78:1-505,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456,686e1ab6-c47e-11e7-a42c-6c92bf46f384:234-567"
 	expectedGTIDs, err := gtid.ParserGTID(flavor, expectedGTIDsStr)
 	c.Assert(err, IsNil)
 
@@ -912,7 +909,7 @@ func (t *testRelaySuite) TestRecoverMySQL(c *C) {
 	// try recover, no operation applied
 	expectedPos.Pos += uint32(len(extraData))
 	// 4 DDL + 10 DML
-	expectedGTIDsStr = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-18,53bfca22-690d-11e7-8a62-18ded7a37b78:1-506,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456,686e1ab6-c47e-11e7-a42c-6c92bf46f384:234-567"
+	expectedGTIDsStr = "3ccc475b-2343-11e7-be21-6c0b84d59f30:1-17,53bfca22-690d-11e7-8a62-18ded7a37b78:1-506,406a3f61-690d-11e7-87c5-6c92bf46f384:123-456,686e1ab6-c47e-11e7-a42c-6c92bf46f384:234-567"
 	expectedGTIDs, err = gtid.ParserGTID(flavor, expectedGTIDsStr)
 	c.Assert(err, IsNil)
 	result, err = r.doRecovering(context.Background(), relayDir, filename, parser2)

@@ -30,7 +30,6 @@ import (
 	"github.com/pingcap/tidb/parser"
 	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tiflow/dm/config"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
 	"github.com/pingcap/tiflow/dm/pb"
 	"github.com/pingcap/tiflow/dm/pkg/binlog"
 	"github.com/pingcap/tiflow/dm/pkg/binlog/common"
@@ -182,7 +181,7 @@ func (r *Relay) process(ctx context.Context) error {
 		return err
 	}
 
-	db, err := conn.GetUpstreamDB(&r.cfg.From)
+	db, err := conn.DefaultDBProvider.Apply(&r.cfg.From)
 	if err != nil {
 		return terror.WithScope(err, terror.ScopeUpstream)
 	}
@@ -197,12 +196,12 @@ func (r *Relay) process(ctx context.Context) error {
 		return err
 	}
 
-	parser2, err := conn.GetParser(tcontext.NewContext(ctx, log.L()), r.db) // refine to use user config later
+	parser2, err := utils.GetParser(ctx, r.db.DB) // refine to use user config later
 	if err != nil {
 		return err
 	}
 
-	isNew, err := isNewServer(ctx, r.meta.SubDir(), r.db, r.cfg.Flavor)
+	isNew, err := isNewServer(ctx, r.meta.SubDir(), r.db.DB, r.cfg.Flavor)
 	if err != nil {
 		return err
 	}
@@ -384,16 +383,16 @@ func (r *Relay) tryRecoverLatestFile(ctx context.Context, parser2 *parser.Parser
 				zap.Stringer("from position", latestPos), zap.Stringer("to position", result.LatestPos), log.WrapStringerField("from GTID set", latestGTID), log.WrapStringerField("to GTID set", result.LatestGTIDs))
 
 			if result.LatestGTIDs != nil {
-				dbConn, err2 := r.db.GetBaseConn(ctx)
+				dbConn, err2 := r.db.DB.Conn(ctx)
 				if err2 != nil {
 					return err2
 				}
-				defer r.db.CloseConnWithoutErr(dbConn)
-				result.LatestGTIDs, err2 = conn.AddGSetWithPurged(ctx, result.LatestGTIDs, dbConn)
+				defer dbConn.Close()
+				result.LatestGTIDs, err2 = utils.AddGSetWithPurged(ctx, result.LatestGTIDs, dbConn)
 				if err2 != nil {
 					return err2
 				}
-				latestGTID, err2 = conn.AddGSetWithPurged(ctx, latestGTID, dbConn)
+				latestGTID, err2 = utils.AddGSetWithPurged(ctx, latestGTID, dbConn)
 				if err2 != nil {
 					return err2
 				}
@@ -570,8 +569,6 @@ func (r *Relay) handleEvents(
 	}
 
 	firstEvent := true
-	relayPosGauge := relayLogPosGauge.WithLabelValues("relay")
-	relayFileGauge := relayLogFileGauge.WithLabelValues("relay")
 	for {
 		// 1. read events from upstream server
 		readTimer := time.Now()
@@ -599,7 +596,7 @@ func (r *Relay) handleEvents(
 			case replication.ErrSyncClosed, replication.ErrNeedSyncAgain:
 				// do nothing, but the error will be returned
 			default:
-				if conn.IsErrBinlogPurged(err) {
+				if utils.IsErrBinlogPurged(err) {
 					// TODO: try auto fix GTID, and can support auto switching between upstream server later.
 					cfg := r.cfg.From
 					r.logger.Error("the requested binlog files have purged in the master server or the master server have switched, currently DM do no support to handle this error",
@@ -644,7 +641,7 @@ func (r *Relay) handleEvents(
 		}
 
 		if _, ok := e.Event.(*replication.RotateEvent); ok && utils.IsFakeRotateEvent(e.Header) {
-			isNew, err2 := isNewServer(ctx, r.meta.SubDir(), r.db, r.cfg.Flavor)
+			isNew, err2 := isNewServer(ctx, r.meta.SubDir(), r.db.DB, r.cfg.Flavor)
 			// should start from the transaction beginning when switch to a new server
 			if err2 != nil {
 				return err2
@@ -707,11 +704,11 @@ func (r *Relay) handleEvents(
 		}
 
 		relayLogWriteSizeHistogram.Observe(float64(e.Header.EventSize))
-		relayPosGauge.Set(float64(lastPos.Pos))
+		relayLogPosGauge.WithLabelValues("relay").Set(float64(lastPos.Pos))
 		if index, err2 := utils.GetFilenameIndex(lastPos.Name); err2 != nil {
 			r.logger.Error("parse binlog file name", zap.String("file name", lastPos.Name), log.ShortError(err2))
 		} else {
-			relayFileGauge.Set(float64(index))
+			relayLogFileGauge.WithLabelValues("relay").Set(float64(index))
 		}
 
 		if needSavePos {
@@ -752,7 +749,7 @@ func (r *Relay) tryUpdateActiveRelayLog(e *replication.BinlogEvent, filename str
 
 // reSetupMeta re-setup the metadata when switching to a new upstream master server.
 func (r *Relay) reSetupMeta(ctx context.Context) error {
-	uuid, err := conn.GetServerUUID(tcontext.NewContext(ctx, log.L()), r.db, r.cfg.Flavor)
+	uuid, err := utils.GetServerUUID(ctx, r.db.DB, r.cfg.Flavor)
 	if err != nil {
 		return err
 	}
@@ -872,7 +869,7 @@ func (r *Relay) doIntervalOps(ctx context.Context) {
 				r.RUnlock()
 				return
 			}
-			ctx2, cancel2 := context.WithTimeout(ctx, conn.DefaultDBTimeout)
+			ctx2, cancel2 := context.WithTimeout(ctx, utils.DefaultDBTimeout)
 			tctx := tcontext.NewContext(ctx2, r.logger)
 			pos, _, err := conn.GetPosAndGs(tctx, r.db, r.cfg.Flavor)
 			cancel2()
@@ -911,11 +908,11 @@ func (r *Relay) doIntervalOps(ctx context.Context) {
 
 // setUpReader setups the underlying reader used to read binlog events from the upstream master server.
 func (r *Relay) setUpReader(ctx context.Context) (Reader, error) {
-	ctx2, cancel := context.WithTimeout(ctx, conn.DefaultDBTimeout)
+	ctx2, cancel := context.WithTimeout(ctx, utils.DefaultDBTimeout)
 	defer cancel()
 
 	// always use a new random serverID
-	randomServerID, err := conn.GetRandomServerID(tcontext.NewContext(ctx2, log.L()), r.db)
+	randomServerID, err := utils.GetRandomServerID(ctx2, r.db.DB)
 	if err != nil {
 		// should never happened unless the master has too many slave
 		return nil, terror.Annotate(err, "fail to get random server id for relay reader")
@@ -1088,12 +1085,12 @@ func (r *Relay) Reload(newCfg *Config) error {
 
 	r.closeDB()
 	if r.cfg.From.RawDBCfg == nil {
-		r.cfg.From.RawDBCfg = dbconfig.DefaultRawDBConfig()
+		r.cfg.From.RawDBCfg = config.DefaultRawDBConfig()
 	}
 	r.cfg.From.RawDBCfg.ReadTimeout = showStatusConnectionTimeout
-	db, err := conn.GetUpstreamDB(&r.cfg.From)
+	db, err := conn.DefaultDBProvider.Apply(&r.cfg.From)
 	if err != nil {
-		return terror.DBErrorAdapt(err, db.Scope, terror.ErrDBDriverError)
+		return terror.WithScope(terror.DBErrorAdapt(err, terror.ErrDBDriverError), terror.ScopeUpstream)
 	}
 	r.db = db
 
@@ -1175,7 +1172,7 @@ func (r *Relay) adjustGTID(ctx context.Context, gset mysql.GTIDSet) (mysql.GTIDS
 	// setup a TCP binlog reader (because no relay can be used when upgrading).
 	syncCfg := r.syncerCfg
 	// always use a new random serverID
-	randomServerID, err := conn.GetRandomServerID(tcontext.NewContext(ctx, log.L()), r.db)
+	randomServerID, err := utils.GetRandomServerID(ctx, r.db.DB)
 	if err != nil {
 		return nil, terror.Annotate(err, "fail to get random server id when relay adjust gtid")
 	}
@@ -1186,12 +1183,12 @@ func (r *Relay) adjustGTID(ctx context.Context, gset mysql.GTIDSet) (mysql.GTIDS
 		return nil, err
 	}
 
-	dbConn, err2 := r.db.GetBaseConn(ctx)
+	dbConn, err2 := r.db.DB.Conn(ctx)
 	if err2 != nil {
 		return nil, err2
 	}
-	defer r.db.CloseConnWithoutErr(dbConn)
-	return conn.AddGSetWithPurged(ctx, resultGs, dbConn)
+	defer dbConn.Close()
+	return utils.AddGSetWithPurged(ctx, resultGs, dbConn)
 }
 
 func (r *Relay) notify(e *replication.BinlogEvent) {

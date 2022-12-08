@@ -88,7 +88,6 @@ func New(ctx context.Context,
 	changefeed model.ChangeFeedID,
 	tableID model.TableID,
 	tableName string,
-	filterLoop bool,
 ) Puller {
 	tikvStorage, ok := kvStorage.(tikv.Storage)
 	if !ok {
@@ -109,7 +108,7 @@ func New(ctx context.Context,
 		WithLabelValues(changefeed.Namespace, changefeed.ID, pullerType)
 	tsTracker := frontier.NewFrontier(0, metricMissedRegionCollectCounter, comparableSpans...)
 	kvCli := kv.NewCDCKVClient(
-		ctx, pdCli, grpcPool, regionCache, pdClock, cfg, changefeed, tableID, tableName, filterLoop)
+		ctx, pdCli, grpcPool, regionCache, pdClock, cfg, changefeed, tableID, tableName)
 	p := &pullerImpl{
 		kvCli:        kvCli,
 		kvStorage:    tikvStorage,

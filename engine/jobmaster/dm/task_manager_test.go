@@ -387,7 +387,7 @@ func (t *testDMJobmasterSuite) TestTaskManager() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				taskManager.DoTick(ctx)
+				taskManager.Tick(ctx)
 			}
 		}
 	}()

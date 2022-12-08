@@ -435,7 +435,7 @@ func (s *Server) Run(ctx context.Context) error {
 		grpc.StreamInterceptor(grpcprometheus.StreamServerInterceptor),
 		grpc.ChainUnaryInterceptor(
 			grpcprometheus.UnaryServerInterceptor,
-			rpcutil.NormalizeError(),
+			rpcutil.UnaryServerInterceptor,
 		),
 	)
 	err = s.startMsgService(ctx, wg)

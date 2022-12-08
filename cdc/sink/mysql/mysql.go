@@ -34,14 +34,13 @@ import (
 	"github.com/pingcap/tiflow/cdc/contextutil"
 	"github.com/pingcap/tiflow/cdc/model"
 	"github.com/pingcap/tiflow/cdc/sink/metrics"
-	dmutils "github.com/pingcap/tiflow/dm/pkg/conn"
+	dmutils "github.com/pingcap/tiflow/dm/pkg/utils"
 	"github.com/pingcap/tiflow/pkg/config"
 	cerror "github.com/pingcap/tiflow/pkg/errors"
 	"github.com/pingcap/tiflow/pkg/errorutil"
 	"github.com/pingcap/tiflow/pkg/notify"
 	"github.com/pingcap/tiflow/pkg/quotes"
 	"github.com/pingcap/tiflow/pkg/retry"
-	pmysql "github.com/pingcap/tiflow/pkg/sink/mysql"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -51,9 +50,6 @@ const (
 	backoffBaseDelayInMs = 500
 	// in previous/backoff retry pkg, the DefaultMaxInterval = 60 * time.Second
 	backoffMaxDelayInMs = 60 * 1000
-
-	// networkDriftDuration is used to construct a context timeout for database operations.
-	networkDriftDuration = 5 * time.Second
 )
 
 type mysqlSink struct {
@@ -105,7 +101,6 @@ func NewMySQLSink(
 		username = "root"
 	}
 	password, _ := sinkURI.User.Password()
-
 	hostName := sinkURI.Hostname()
 	port := sinkURI.Port()
 	if port == "" {
@@ -131,8 +126,7 @@ func NewMySQLSink(
 	dsn.Params["readTimeout"] = params.readTimeout
 	dsn.Params["writeTimeout"] = params.writeTimeout
 	dsn.Params["timeout"] = params.dialTimeout
-
-	testDB, err := pmysql.GetTestDB(ctx, dsn, GetDBConnImpl)
+	testDB, err := GetDBConnImpl(ctx, dsn.FormatDSN())
 	if err != nil {
 		return nil, err
 	}
@@ -327,12 +321,7 @@ func (s *mysqlSink) execDDLWithMaxRetries(ctx context.Context, ddl *model.DDLEve
 		retry.WithIsRetryableErr(errorutil.IsRetryableDDLError))
 }
 
-func (s *mysqlSink) execDDL(pctx context.Context, ddl *model.DDLEvent) error {
-	writeTimeout, _ := time.ParseDuration(s.params.writeTimeout)
-	writeTimeout += networkDriftDuration
-	ctx, cancelFunc := context.WithTimeout(pctx, writeTimeout)
-	defer cancelFunc()
-
+func (s *mysqlSink) execDDL(ctx context.Context, ddl *model.DDLEvent) error {
 	shouldSwitchDB := needSwitchDB(ddl)
 
 	failpoint.Inject("MySQLSinkExecDDLDelay", func() {
@@ -637,7 +626,7 @@ func logDMLTxnErr(
 	return err
 }
 
-func (s *mysqlSink) execDMLWithMaxRetries(pctx context.Context, dmls *preparedDMLs, bucket int) error {
+func (s *mysqlSink) execDMLWithMaxRetries(ctx context.Context, dmls *preparedDMLs, bucket int) error {
 	if len(dmls.sqls) != len(dmls.values) {
 		log.Panic("unexpected number of sqls and values",
 			zap.Strings("sqls", dmls.sqls),
@@ -645,12 +634,7 @@ func (s *mysqlSink) execDMLWithMaxRetries(pctx context.Context, dmls *preparedDM
 	}
 
 	start := time.Now()
-	return retry.Do(pctx, func() error {
-		writeTimeout, _ := time.ParseDuration(s.params.writeTimeout)
-		writeTimeout += networkDriftDuration
-		ctx, cancelFunc := context.WithTimeout(pctx, writeTimeout)
-		defer cancelFunc()
-
+	return retry.Do(ctx, func() error {
 		failpoint.Inject("MySQLSinkTxnRandomError", func() {
 			failpoint.Return(
 				logDMLTxnErr(

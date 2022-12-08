@@ -135,22 +135,36 @@ func TestBatchEncode_Batch(t *testing.T) {
 		Columns:  []*model.Column{{Name: "col1", Type: 1, Value: "aa"}},
 	}
 
+	events := make([]mqEvent, 0, 512)
 	for i := 0; i < 512; i++ {
-		worker.msgChan.In() <- mqEvent{
+		events = append(events, mqEvent{
 			key: key,
 			rowEvent: &eventsink.RowChangeCallbackableEvent{
 				Event:     row,
 				Callback:  func() {},
 				SinkState: &tableStatus,
 			},
-		}
+		})
 	}
 
 	// Test batching returns when the events count is equal to the batch size.
+	var wg sync.WaitGroup
 	batch := make([]mqEvent, 512)
-	endIndex, err := worker.batch(ctx, batch)
-	require.NoError(t, err)
-	require.Equal(t, 512, endIndex)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		endIndex, err := worker.batch(ctx, batch)
+		require.NoError(t, err)
+		require.Equal(t, 512, endIndex)
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for _, event := range events {
+			worker.msgChan.In() <- event
+		}
+	}()
+	wg.Wait()
 }
 
 func TestBatchEncode_Group(t *testing.T) {

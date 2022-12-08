@@ -15,7 +15,6 @@ package sinkmanager
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/pingcap/tiflow/cdc/model"
@@ -27,7 +26,6 @@ import (
 )
 
 type mockSink struct {
-	mu         sync.Mutex
 	events     []*eventsink.CallbackableEvent[*model.RowChangedEvent]
 	writeTimes int
 }
@@ -39,23 +37,9 @@ func newMockSink() *mockSink {
 }
 
 func (m *mockSink) WriteEvents(events ...*eventsink.CallbackableEvent[*model.RowChangedEvent]) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	m.writeTimes++
 	m.events = append(m.events, events...)
 	return nil
-}
-
-func (m *mockSink) GetEvents() []*eventsink.CallbackableEvent[*model.RowChangedEvent] {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.events
-}
-
-func (m *mockSink) GetWriteTimes() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.writeTimes
 }
 
 func (m *mockSink) Close() error {
@@ -84,7 +68,7 @@ func TestTableSinkWrapperClose(t *testing.T) {
 
 	wrapper, _ := createTableSinkWrapper(model.DefaultChangeFeedID("1"), 1)
 	require.Equal(t, tablepb.TableStatePreparing, wrapper.getState())
-	wrapper.close(context.Background())
+	require.Nil(t, wrapper.close(context.Background()))
 	require.Equal(t, tablepb.TableStateStopped, wrapper.getState(), "table sink state should be stopped")
 }
 

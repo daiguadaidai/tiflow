@@ -44,14 +44,6 @@ type DBConn struct {
 	resetBaseConnFn func(*tcontext.Context, *conn.BaseConn) (*conn.BaseConn, error)
 }
 
-// Scope return connection scope.
-func (conn *DBConn) Scope() terror.ErrScope {
-	if conn == nil || conn.baseConn == nil {
-		return terror.ScopeNotSet
-	}
-	return conn.baseConn.Scope
-}
-
 func (conn *DBConn) querySQL(ctx *tcontext.Context, query string, args ...interface{}) (*sql.Rows, error) {
 	if conn == nil || conn.baseConn == nil {
 		return nil, terror.ErrDBUnExpect.Generate("database connection not valid")
@@ -208,7 +200,7 @@ func createConns(tctx *tcontext.Context, cfg *config.SubTaskConfig,
 	name, sourceID string,
 	workerCount int,
 ) (*conn.BaseDB, []*DBConn, error) {
-	baseDB, err := conn.GetDownstreamDB(&cfg.To)
+	baseDB, err := conn.DefaultDBProvider.Apply(&cfg.To)
 	if err != nil {
 		return nil, nil, terror.WithScope(err, terror.ScopeDownstream)
 	}
@@ -223,7 +215,7 @@ func createConns(tctx *tcontext.Context, cfg *config.SubTaskConfig,
 			return nil, nil, terror.WithScope(err, terror.ScopeDownstream)
 		}
 		resetBaseConnFn := func(tctx *tcontext.Context, baseConn *conn.BaseConn) (*conn.BaseConn, error) {
-			err := baseDB.ForceCloseConn(baseConn)
+			err := baseDB.CloseBaseConn(baseConn)
 			if err != nil {
 				tctx.L().Warn("failed to close baseConn in reset")
 			}
@@ -235,13 +227,13 @@ func createConns(tctx *tcontext.Context, cfg *config.SubTaskConfig,
 }
 
 func isErrDBExists(err error) bool {
-	return conn.IsMySQLError(err, tmysql.ErrDBCreateExists)
+	return utils.IsMySQLError(err, tmysql.ErrDBCreateExists)
 }
 
 func isErrTableExists(err error) bool {
-	return conn.IsMySQLError(err, tmysql.ErrTableExists)
+	return utils.IsMySQLError(err, tmysql.ErrTableExists)
 }
 
 func isErrDupEntry(err error) bool {
-	return conn.IsMySQLError(err, tmysql.ErrDupEntry)
+	return utils.IsMySQLError(err, tmysql.ErrDupEntry)
 }

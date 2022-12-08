@@ -14,15 +14,10 @@
 package checker
 
 import (
-	"context"
-	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/pingcap/tidb/util/dbutil"
-	"github.com/stretchr/testify/require"
+	tc "github.com/pingcap/check"
 )
 
-func TestMysqlVersion(t *testing.T) {
+func (t *testCheckSuite) TestMysqlVersion(c *tc.C) {
 	versionChecker := &MySQLVersionChecker{}
 
 	cases := []struct {
@@ -46,19 +41,6 @@ func TestMysqlVersion(t *testing.T) {
 			State: StateWarning,
 		}
 		versionChecker.checkVersion(cs.rawVersion, result)
-		require.Equal(t, result.State == StateSuccess, cs.pass)
+		c.Assert(result.State == StateSuccess, tc.Equals, cs.pass)
 	}
-}
-
-func TestVersionInstruction(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	versionChecker := &MySQLVersionChecker{
-		db:     db,
-		dbinfo: &dbutil.DBConfig{},
-	}
-	mock.ExpectQuery("SHOW GLOBAL VARIABLES LIKE 'version';").WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("version", "8.0.20"))
-	result := versionChecker.Check(context.Background())
-	require.Equal(t, result.State, StateWarning)
-	require.Equal(t, result.Instruction, "It is recommended that you select a database version that meets the requirements before performing data migration. Otherwise data inconsistency or task exceptions might occur.")
 }

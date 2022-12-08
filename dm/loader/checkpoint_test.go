@@ -23,7 +23,6 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	. "github.com/pingcap/check"
 	"github.com/pingcap/tiflow/dm/config"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
 	"github.com/pingcap/tiflow/dm/pkg/conn"
 	tcontext "github.com/pingcap/tiflow/dm/pkg/context"
 	"github.com/pingcap/tiflow/dm/pkg/cputil"
@@ -65,7 +64,7 @@ func (t *testCheckPointSuite) SetUpSuite(c *C) {
 	pswd := os.Getenv("MYSQL_PSWD")
 
 	t.cfg = &config.SubTaskConfig{
-		To: dbconfig.DBConfig{
+		To: config.DBConfig{
 			Host:     host,
 			User:     user,
 			Password: pswd,
@@ -274,7 +273,7 @@ type lightningCpListSuite struct {
 func (s *lightningCpListSuite) SetUpTest(c *C) {
 	s.mock = conn.InitMockDB(c)
 
-	baseDB, err := conn.GetDownstreamDB(&dbconfig.DBConfig{})
+	baseDB, err := conn.DefaultDBProvider.Apply(&config.DBConfig{})
 	c.Assert(err, IsNil)
 
 	metaSchema := "dm_meta"

@@ -25,8 +25,6 @@ import (
 	bf "github.com/pingcap/tidb-tools/pkg/binlog-filter"
 	"github.com/pingcap/tidb/util/filter"
 	router "github.com/pingcap/tidb/util/table-router"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
-	"github.com/pingcap/tiflow/dm/config/security"
 	"github.com/pingcap/tiflow/dm/pkg/terror"
 	"github.com/stretchr/testify/require"
 )
@@ -516,7 +514,7 @@ func TestTaskBlockAllowList(t *testing.T) {
 	cfg := &TaskConfig{
 		Name:           "test",
 		TaskMode:       "full",
-		TargetDB:       &dbconfig.DBConfig{},
+		TargetDB:       &DBConfig{},
 		MySQLInstances: []*MySQLInstance{{SourceID: "source-1"}},
 		BWList:         map[string]*filter.Rules{"source-1": filterRules1},
 	}
@@ -566,13 +564,13 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 			"sql_mode":  " NO_AUTO_VALUE_ON_ZERO,ANSI_QUOTES",
 			"time_zone": "+00:00",
 		}
-		security = security.Security{
+		security = Security{
 			SSLCA:         "/path/to/ca",
 			SSLCert:       "/path/to/cert",
 			SSLKey:        "/path/to/key",
 			CertAllowedCN: []string{"allowed-cn"},
 		}
-		rawDBCfg = dbconfig.RawDBConfig{
+		rawDBCfg = RawDBConfig{
 			MaxIdleConns: 333,
 			ReadTimeout:  "2m",
 			WriteTimeout: "1m",
@@ -630,7 +628,7 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 			DeleteValueExpr: "state = 1",
 		}
 		validatorCfg = ValidatorConfig{Mode: ValidationNone}
-		source1DBCfg = dbconfig.DBConfig{
+		source1DBCfg = DBConfig{
 			Host:             "127.0.0.1",
 			Port:             3306,
 			User:             "user_from_1",
@@ -640,7 +638,7 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 			Security:         &security,
 			RawDBCfg:         &rawDBCfg,
 		}
-		source2DBCfg = dbconfig.DBConfig{
+		source2DBCfg = DBConfig{
 			Host:             "127.0.0.1",
 			Port:             3307,
 			User:             "user_from_2",
@@ -673,7 +671,7 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 				BinLogGTID: "1-1-12,4-4-4",
 			},
 			From: source1DBCfg,
-			To: dbconfig.DBConfig{
+			To: DBConfig{
 				Host:             "127.0.0.1",
 				Port:             4000,
 				User:             "user_to",
@@ -697,12 +695,10 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 				ExtraArgs:     "--escape-backslash",
 			},
 			LoaderConfig: LoaderConfig{
-				PoolSize:            32,
-				Dir:                 "./dumped_data",
-				SortingDirPhysical:  "./dumped_data",
-				ImportMode:          LoadModePhysical,
-				OnDuplicateLogical:  OnDuplicateReplace,
-				OnDuplicatePhysical: OnDuplicateNone,
+				PoolSize:    32,
+				Dir:         "./dumpped_data",
+				ImportMode:  LoadModePhysical,
+				OnDuplicate: OnDuplicateReplace,
 			},
 			SyncerConfig: SyncerConfig{
 				WorkerCount:             32,
@@ -836,7 +832,7 @@ func TestGenAndFromSubTaskConfigs(t *testing.T) {
 	require.Equal(t, wordCount(cfg.String()), wordCount(cfg2.String())) // since rules are unordered, so use wordCount to compare
 
 	require.NoError(t, cfg.adjust())
-	stCfgs, err := TaskConfigToSubTaskConfigs(cfg, map[string]dbconfig.DBConfig{source1: source1DBCfg, source2: source2DBCfg})
+	stCfgs, err := TaskConfigToSubTaskConfigs(cfg, map[string]DBConfig{source1: source1DBCfg, source2: source2DBCfg})
 	require.NoError(t, err)
 	// revert ./dumpped_data.from-sub-tasks
 	stCfgs[0].LoaderConfig.Dir = stCfg1.LoaderConfig.Dir
@@ -938,28 +934,28 @@ func TestAdjustTargetDBConfig(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		dbConfig dbconfig.DBConfig
-		result   dbconfig.DBConfig
+		dbConfig DBConfig
+		result   DBConfig
 		version  *semver.Version
 	}{
 		{
-			dbconfig.DBConfig{},
-			dbconfig.DBConfig{Session: map[string]string{}},
+			DBConfig{},
+			DBConfig{Session: map[string]string{}},
 			semver.New("0.0.0"),
 		},
 		{
-			dbconfig.DBConfig{Session: map[string]string{"SQL_MODE": "ANSI_QUOTES"}},
-			dbconfig.DBConfig{Session: map[string]string{"sql_mode": "ANSI_QUOTES"}},
+			DBConfig{Session: map[string]string{"SQL_MODE": "ANSI_QUOTES"}},
+			DBConfig{Session: map[string]string{"sql_mode": "ANSI_QUOTES"}},
 			semver.New("2.0.7"),
 		},
 		{
-			dbconfig.DBConfig{},
-			dbconfig.DBConfig{Session: map[string]string{tidbTxnMode: tidbTxnOptimistic}},
+			DBConfig{},
+			DBConfig{Session: map[string]string{tidbTxnMode: tidbTxnOptimistic}},
 			semver.New("3.0.1"),
 		},
 		{
-			dbconfig.DBConfig{Session: map[string]string{"SQL_MODE": "", tidbTxnMode: "pessimistic"}},
-			dbconfig.DBConfig{Session: map[string]string{"sql_mode": "", tidbTxnMode: "pessimistic"}},
+			DBConfig{Session: map[string]string{"SQL_MODE": "", tidbTxnMode: "pessimistic"}},
+			DBConfig{Session: map[string]string{"sql_mode": "", tidbTxnMode: "pessimistic"}},
 			semver.New("4.0.0-beta.2"),
 		},
 	}
@@ -976,7 +972,7 @@ func TestDefaultConfig(t *testing.T) {
 	cfg := NewTaskConfig()
 	cfg.Name = "test"
 	cfg.TaskMode = "all"
-	cfg.TargetDB = &dbconfig.DBConfig{}
+	cfg.TargetDB = &DBConfig{}
 	cfg.MySQLInstances = append(cfg.MySQLInstances, &MySQLInstance{SourceID: "source1"})
 	require.NoError(t, cfg.adjust())
 	require.Equal(t, DefaultMydumperConfig(), *cfg.MySQLInstances[0].Mydumper)
@@ -992,7 +988,7 @@ func TestExclusiveAndWrongExprFilterFields(t *testing.T) {
 	cfg := NewTaskConfig()
 	cfg.Name = "test"
 	cfg.TaskMode = "all"
-	cfg.TargetDB = &dbconfig.DBConfig{}
+	cfg.TargetDB = &DBConfig{}
 	cfg.MySQLInstances = append(cfg.MySQLInstances, &MySQLInstance{SourceID: "source1"})
 	require.NoError(t, cfg.adjust())
 
@@ -1144,31 +1140,4 @@ func cloneValues(dest, src reflect.Value) {
 			}
 		}
 	}
-}
-
-func TestLoadConfigAdjust(t *testing.T) {
-	t.Parallel()
-
-	cfg := &LoaderConfig{}
-	require.NoError(t, cfg.adjust())
-	require.Equal(t, &LoaderConfig{
-		PoolSize:            16,
-		Dir:                 "",
-		SQLMode:             "",
-		ImportMode:          "logical",
-		OnDuplicate:         "",
-		OnDuplicateLogical:  "replace",
-		OnDuplicatePhysical: "none",
-	}, cfg)
-
-	// test deprecated OnDuplicate will write to OnDuplicateLogical
-	cfg.OnDuplicate = "replace"
-	cfg.OnDuplicateLogical = ""
-	require.NoError(t, cfg.adjust())
-	require.Equal(t, OnDuplicateReplace, cfg.OnDuplicateLogical)
-
-	// test wrong value
-	cfg.OnDuplicatePhysical = "wrong"
-	err := cfg.adjust()
-	require.True(t, terror.ErrConfigInvalidPhysicalDuplicateResolution.Equal(err))
 }

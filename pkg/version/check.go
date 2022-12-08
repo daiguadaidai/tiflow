@@ -25,7 +25,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/kvproto/pkg/metapb"
 	"github.com/pingcap/log"
-	"github.com/pingcap/tidb/util/engine"
 	cerror "github.com/pingcap/tiflow/pkg/errors"
 	"github.com/pingcap/tiflow/pkg/httputil"
 	"github.com/pingcap/tiflow/pkg/security"
@@ -59,8 +58,7 @@ var (
 
 var versionHash = regexp.MustCompile("-[0-9]+-g[0-9a-f]{7,}(-dev)?")
 
-// SanitizeVersion remove the prefix "v" and suffix git hash.
-func SanitizeVersion(v string) string {
+func removeVAndHash(v string) string {
 	if v == "" {
 		return v
 	}
@@ -108,17 +106,17 @@ func CheckTiCDCVersion(versions map[string]struct{}) error {
 
 	ver := &semver.Version{}
 	for v := range versions {
-		if err := ver.Set(SanitizeVersion(v)); err != nil {
+		if err := ver.Set(removeVAndHash(v)); err != nil {
 			return cerror.WrapError(cerror.ErrNewSemVersion, err)
 		}
 		if ver.Compare(*MinTiCDCVersion) < 0 {
 			arg := fmt.Sprintf("TiCDC %s is not supported, the minimal compatible version is %s",
-				SanitizeVersion(v), MinTiCDCVersion)
+				removeVAndHash(v), MinTiCDCVersion)
 			return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 		}
 		if ver.Compare(*MaxTiCDCVersion) >= 0 {
 			arg := fmt.Sprintf("TiCDC %s is not supported, only support version less than %s",
-				SanitizeVersion(v), MaxTiCDCVersion)
+				removeVAndHash(v), MaxTiCDCVersion)
 			return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 		}
 	}
@@ -159,7 +157,7 @@ func checkPDVersion(ctx context.Context, pdAddr string, credential *security.Cre
 		return cerror.ErrCheckClusterVersionFromPD.GenWithStackByArgs(err)
 	}
 
-	ver, err := semver.NewVersion(SanitizeVersion(pdVer.Version))
+	ver, err := semver.NewVersion(removeVAndHash(pdVer.Version))
 	if err != nil {
 		err = errors.Annotate(err, "invalid PD version")
 		return cerror.WrapError(cerror.ErrNewSemVersion, err)
@@ -168,13 +166,13 @@ func checkPDVersion(ctx context.Context, pdAddr string, credential *security.Cre
 	minOrd := ver.Compare(*minPDVersion)
 	if minOrd < 0 {
 		arg := fmt.Sprintf("PD %s is not supported, the minimal compatible version is %s",
-			SanitizeVersion(pdVer.Version), minPDVersion)
+			removeVAndHash(pdVer.Version), minPDVersion)
 		return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 	}
 	maxOrd := ver.Compare(*maxPDVersion)
 	if maxOrd >= 0 {
 		arg := fmt.Sprintf("PD %s is not supported, only support version less than %s",
-			SanitizeVersion(pdVer.Version), maxPDVersion)
+			removeVAndHash(pdVer.Version), maxPDVersion)
 		return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 	}
 	return nil
@@ -196,11 +194,7 @@ func CheckStoreVersion(ctx context.Context, client pd.Client, storeID uint64) er
 	}
 
 	for _, s := range stores {
-		if engine.IsTiFlash(s) {
-			continue
-		}
-
-		ver, err := semver.NewVersion(SanitizeVersion(s.Version))
+		ver, err := semver.NewVersion(removeVAndHash(s.Version))
 		if err != nil {
 			err = errors.Annotate(err, "invalid TiKV version")
 			return cerror.WrapError(cerror.ErrNewSemVersion, err)
@@ -208,13 +202,13 @@ func CheckStoreVersion(ctx context.Context, client pd.Client, storeID uint64) er
 		minOrd := ver.Compare(*MinTiKVVersion)
 		if minOrd < 0 {
 			arg := fmt.Sprintf("TiKV %s is not supported, the minimal compatible version is %s",
-				SanitizeVersion(s.Version), MinTiKVVersion)
+				removeVAndHash(s.Version), MinTiKVVersion)
 			return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 		}
 		maxOrd := ver.Compare(*maxTiKVVersion)
 		if maxOrd >= 0 {
 			arg := fmt.Sprintf("TiKV %s is not supported, only support version less than %s",
-				SanitizeVersion(s.Version), maxTiKVVersion)
+				removeVAndHash(s.Version), maxTiKVVersion)
 			return cerror.ErrVersionIncompatible.GenWithStackByArgs(arg)
 		}
 	}
@@ -268,7 +262,7 @@ func GetTiCDCClusterVersion(captureVersion []string) (TiCDCClusterVersion, error
 		var ver *semver.Version
 		var err error
 		if versionStr != "" {
-			ver, err = semver.NewVersion(SanitizeVersion(versionStr))
+			ver, err = semver.NewVersion(removeVAndHash(versionStr))
 		} else {
 			ver = defaultTiCDCVersion
 		}

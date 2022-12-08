@@ -21,7 +21,6 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/tiflow/dm/config"
-	"github.com/pingcap/tiflow/dm/config/security"
 	"github.com/pingcap/tiflow/dm/master/metrics"
 	"github.com/pingcap/tiflow/dm/master/workerrpc"
 	"github.com/pingcap/tiflow/dm/pb"
@@ -93,7 +92,7 @@ type Worker struct {
 }
 
 // NewWorker creates a new Worker instance with Offline stage.
-func NewWorker(baseInfo ha.WorkerInfo, securityCfg security.Security) (*Worker, error) {
+func NewWorker(baseInfo ha.WorkerInfo, securityCfg config.Security) (*Worker, error) {
 	cli, err := workerrpc.NewGRPCClient(baseInfo.Addr, securityCfg)
 	if err != nil {
 		return nil, err

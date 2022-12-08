@@ -30,7 +30,6 @@ import (
 	"github.com/pingcap/tiflow/pkg/config"
 	cerror "github.com/pingcap/tiflow/pkg/errors"
 	"github.com/pingcap/tiflow/pkg/p2p"
-	"github.com/pingcap/tiflow/pkg/pdutil"
 	"github.com/pingcap/tiflow/pkg/version"
 	"go.uber.org/zap"
 )
@@ -54,7 +53,6 @@ type coordinator struct {
 	replicationM *replication.Manager
 	captureM     *member.CaptureManager
 	schedulerM   *scheduler.Manager
-	pdClock      pdutil.Clock
 
 	lastCollectTime time.Time
 	changefeedID    model.ChangeFeedID
@@ -65,11 +63,11 @@ func NewCoordinator(
 	ctx context.Context,
 	captureID model.CaptureID,
 	changefeedID model.ChangeFeedID,
+	checkpointTs model.Ts,
 	messageServer *p2p.MessageServer,
 	messageRouter p2p.MessageRouter,
 	ownerRevision int64,
 	cfg *config.SchedulerConfig,
-	pdClock pdutil.Clock,
 ) (internal.Scheduler, error) {
 	trans, err := transport.NewTransport(
 		ctx, changefeedID, transport.SchedulerRole, messageServer, messageRouter)
@@ -78,7 +76,6 @@ func NewCoordinator(
 	}
 	coord := newCoordinator(captureID, changefeedID, ownerRevision, cfg)
 	coord.trans = trans
-	coord.pdClock = pdClock
 	return coord, nil
 }
 
@@ -239,9 +236,7 @@ func (c *coordinator) Close(ctx context.Context) {
 // ===========
 
 func (c *coordinator) poll(
-	ctx context.Context,
-	checkpointTs model.Ts,
-	currentTables []model.TableID,
+	ctx context.Context, checkpointTs model.Ts, currentTables []model.TableID,
 	aliveCaptures map[model.CaptureID]*model.CaptureInfo,
 ) (newCheckpointTs, newResolvedTs model.Ts, err error) {
 	c.maybeCollectMetrics()
@@ -265,19 +260,10 @@ func (c *coordinator) poll(
 	}
 	msgBuf = append(msgBuf, msgs...)
 
-	pdTime := time.Now()
-	// only nil in unit test
-	if c.pdClock != nil {
-		pdTime, err = c.pdClock.CurrentTime()
-		if err != nil {
-			log.Warn("schedulerv3: failed to get pd time", zap.Error(err))
-		}
-	}
-
 	if !c.captureM.CheckAllCaptureInitialized() {
 		// Skip generating schedule tasks for replication manager,
 		// as not all capture are initialized.
-		newCheckpointTs, newResolvedTs = c.replicationM.AdvanceCheckpoint(currentTables, pdTime)
+		newCheckpointTs, newResolvedTs = c.replicationM.AdvanceCheckpoint(currentTables)
 		return newCheckpointTs, newResolvedTs, c.sendMsgs(ctx, msgBuf)
 	}
 
@@ -311,7 +297,7 @@ func (c *coordinator) poll(
 	}
 
 	// Checkpoint calculation
-	newCheckpointTs, newResolvedTs = c.replicationM.AdvanceCheckpoint(currentTables, pdTime)
+	newCheckpointTs, newResolvedTs = c.replicationM.AdvanceCheckpoint(currentTables)
 	return newCheckpointTs, newResolvedTs, nil
 }
 

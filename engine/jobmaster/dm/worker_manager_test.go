@@ -496,7 +496,7 @@ func (t *testDMJobmasterSuite) TestWorkerManager() {
 			case <-ctx.Done():
 				return
 			case <-t.C:
-				workerManager.DoTick(ctx)
+				workerManager.Tick(ctx)
 			}
 		}
 	}()

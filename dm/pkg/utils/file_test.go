@@ -16,41 +16,44 @@ package utils
 import (
 	"os"
 	"path/filepath"
-	"testing"
 
+	. "github.com/pingcap/check"
 	"github.com/pingcap/tiflow/dm/pkg/terror"
-	"github.com/stretchr/testify/require"
 )
 
-func TestFile(t *testing.T) {
+var _ = Suite(&testFileSuite{})
+
+type testFileSuite struct{}
+
+func (t *testFileSuite) TestFile(c *C) {
 	// dir not exists
-	require.False(t, IsFileExists("invalid-path"))
-	require.False(t, IsDirExists("invalid-path"))
+	c.Assert(IsFileExists("invalid-path"), IsFalse)
+	c.Assert(IsDirExists("invalid-path"), IsFalse)
 	size, err := GetFileSize("invalid-path")
-	require.True(t, terror.ErrGetFileSize.Equal(err))
-	require.Equal(t, int64(0), size)
+	c.Assert(terror.ErrGetFileSize.Equal(err), IsTrue)
+	c.Assert(size, Equals, int64(0))
 
 	// dir exists
-	d := t.TempDir()
-	require.False(t, IsFileExists(d))
-	require.True(t, IsDirExists(d))
+	d := c.MkDir()
+	c.Assert(IsFileExists(d), IsFalse)
+	c.Assert(IsDirExists(d), IsTrue)
 	size, err = GetFileSize(d)
-	require.True(t, terror.ErrGetFileSize.Equal(err))
-	require.Equal(t, int64(0), size)
+	c.Assert(terror.ErrGetFileSize.Equal(err), IsTrue)
+	c.Assert(size, Equals, int64(0))
 
 	// file not exists
 	f := filepath.Join(d, "text-file")
-	require.False(t, IsFileExists(f))
-	require.False(t, IsDirExists(f))
+	c.Assert(IsFileExists(f), IsFalse)
+	c.Assert(IsDirExists(f), IsFalse)
 	size, err = GetFileSize(f)
-	require.True(t, terror.ErrGetFileSize.Equal(err))
-	require.Equal(t, int64(0), size)
+	c.Assert(terror.ErrGetFileSize.Equal(err), IsTrue)
+	c.Assert(size, Equals, int64(0))
 
 	// create a file
-	require.NoError(t, os.WriteFile(f, []byte("some content"), 0o644))
-	require.True(t, IsFileExists(f))
-	require.False(t, IsDirExists(f))
+	c.Assert(os.WriteFile(f, []byte("some content"), 0o644), IsNil)
+	c.Assert(IsFileExists(f), IsTrue)
+	c.Assert(IsDirExists(f), IsFalse)
 	size, err = GetFileSize(f)
-	require.NoError(t, err)
-	require.Equal(t, int64(len("some content")), size)
+	c.Assert(err, IsNil)
+	c.Assert(size, Equals, int64(len("some content")))
 }

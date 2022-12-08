@@ -39,6 +39,7 @@ type ddlSink struct {
 	// statistic is used to record the DDL metrics
 	statistics *metrics.Statistics
 	storage    storage.ExternalStorage
+	tables     *model.TableSet
 }
 
 // NewCloudStorageDDLSink creates a ddl sink for cloud storage.
@@ -62,6 +63,7 @@ func NewCloudStorageDDLSink(ctx context.Context, sinkURI *url.URL) (*ddlSink, er
 	d := &ddlSink{
 		id:         changefeedID,
 		storage:    storage,
+		tables:     model.NewTableSet(),
 		statistics: metrics.NewStatistics(ctx, sink.TxnSink),
 	}
 
@@ -92,6 +94,7 @@ func (d *ddlSink) WriteDDLEvent(ctx context.Context, ddl *model.DDLEvent) error 
 			return err1
 		}
 
+		d.tables.Add(ddl.TableInfo.ID)
 		return nil
 	})
 
@@ -101,6 +104,28 @@ func (d *ddlSink) WriteDDLEvent(ctx context.Context, ddl *model.DDLEvent) error 
 func (d *ddlSink) WriteCheckpointTs(ctx context.Context,
 	ts uint64, tables []*model.TableInfo,
 ) error {
+	for _, table := range tables {
+		ok := d.tables.Contain(table.ID)
+		// if table is not cached before, then create the corresponding
+		// schema.json file anyway.
+		if !ok {
+			var def cloudstorage.TableDetail
+			def.FromTableInfo(table)
+
+			encodedDef, err := json.MarshalIndent(def, "", "    ")
+			if err != nil {
+				return errors.Trace(err)
+			}
+
+			path := d.generateSchemaPath(def)
+			err = d.storage.WriteFile(ctx, path, encodedDef)
+			if err != nil {
+				return errors.Trace(err)
+			}
+			d.tables.Add(table.ID)
+		}
+	}
+
 	ckpt, err := json.Marshal(map[string]uint64{"checkpoint-ts": ts})
 	if err != nil {
 		return errors.Trace(err)

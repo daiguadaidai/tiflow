@@ -72,13 +72,9 @@ type Server struct {
 	wg     sync.WaitGroup
 	kaWg   sync.WaitGroup
 	httpWg sync.WaitGroup
-	runWg  sync.WaitGroup
 
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	runCtx    context.Context
-	runCancel context.CancelFunc
 
 	kaCtx    context.Context
 	kaCancel context.CancelFunc
@@ -110,8 +106,6 @@ func (s *Server) Start() error {
 	RegistryMetrics()
 
 	var m cmux.CMux
-
-	s.runCtx, s.runCancel = context.WithCancel(s.ctx)
 
 	// protect member from data race. some functions below like GetRelayConfig,
 	// GetSourceBoundConfig has a built-in timeout so it will not be stuck for a
@@ -149,10 +143,10 @@ func (s *Server) Start() error {
 
 		s.setWorker(nil, true)
 
-		s.runWg.Add(1)
+		s.wg.Add(1)
 		go func() {
-			s.runBackgroundJob(s.runCtx)
-			s.runWg.Done()
+			s.runBackgroundJob(s.ctx)
+			s.wg.Done()
 		}()
 
 		s.startKeepAlive()
@@ -168,13 +162,13 @@ func (s *Server) Start() error {
 			}
 		}
 
-		s.runWg.Add(1)
+		s.wg.Add(1)
 		go func(ctx context.Context) {
-			defer s.runWg.Done()
+			defer s.wg.Done()
 			// TODO: handle fatal error from observeRelayConfig
 			//nolint:errcheck
 			s.observeRelayConfig(ctx, revRelay)
-		}(s.runCtx)
+		}(s.ctx)
 
 		bound, sourceCfg, revBound, err := ha.GetSourceBoundConfig(s.etcdClient, s.cfg.Name)
 		if err != nil {
@@ -188,9 +182,9 @@ func (s *Server) Start() error {
 			log.L().Info("started to handle mysql source", zap.String("sourceCfg", sourceCfg.String()))
 		}
 
-		s.runWg.Add(1)
+		s.wg.Add(1)
 		go func(ctx context.Context) {
-			defer s.runWg.Done()
+			defer s.wg.Done()
 			for {
 				err1 := s.observeSourceBound(ctx, revBound)
 				if err1 == nil {
@@ -198,7 +192,7 @@ func (s *Server) Start() error {
 				}
 				s.restartKeepAlive()
 			}
-		}(s.runCtx)
+		}(s.ctx)
 
 		// create a cmux
 		m = cmux.New(s.rootLis)
@@ -473,8 +467,8 @@ func (s *Server) doClose() {
 		return
 	}
 	// stop server in advance, stop receiving source bound and relay bound
-	s.runCancel()
-	s.runWg.Wait()
+	s.cancel()
+	s.wg.Wait()
 
 	// stop worker and wait for return(we already lock the whole Sever, so no need use lock to get source worker)
 	if w := s.getSourceWorker(true); w != nil {
@@ -499,9 +493,6 @@ func (s *Server) Close() {
 	defer s.closeMu.Unlock()
 	s.doClose() // we should stop current sync first, otherwise master may schedule task on new worker while we are closing
 	s.stopKeepAlive()
-
-	s.cancel()
-	s.wg.Wait()
 
 	if s.etcdClient != nil {
 		s.etcdClient.Close()

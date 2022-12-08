@@ -104,7 +104,7 @@ type MasterImpl interface {
 	OnWorkerDispatched(worker WorkerHandle, result error) error
 
 	// OnWorkerOnline is called when the first heartbeat for a worker is received.
-	// NOTE: OnWorkerOffline can appear without OnWorkerOnline
+	// Only after OnWorkerOnline, OnWorkerOffline of the same worker may be called.
 	// Return:
 	// - error to let the framework call CloseImpl.
 	// Concurrent safety:
@@ -429,8 +429,7 @@ func (m *DefaultBaseMaster) doInit(ctx context.Context) (isFirstStartUp bool, er
 		},
 		func(_ context.Context, handle master.WorkerHandle, err error) error {
 			return m.Impl.OnWorkerDispatched(handle, err)
-		}, isInit, m.timeoutConfig, m.clock).
-		WithLogger(m.logger)
+		}, isInit, m.timeoutConfig, m.clock)
 
 	inheritedSelectors := m.masterMeta.Ext.Selectors
 	workerCreator := master.NewWorkerCreatorBuilder().

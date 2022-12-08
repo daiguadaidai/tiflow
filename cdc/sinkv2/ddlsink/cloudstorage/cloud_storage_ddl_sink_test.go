@@ -40,7 +40,7 @@ func TestWriteDDLEvent(t *testing.T) {
 
 	ddlEvent := &model.DDLEvent{
 		TableInfo: &model.TableInfo{
-			Version: 100,
+			TableInfoVersion: 100,
 			TableName: model.TableName{
 				Schema:  "test",
 				Table:   "table1",
@@ -98,7 +98,7 @@ func TestWriteCheckpointTs(t *testing.T) {
 	require.Nil(t, err)
 	tables := []*model.TableInfo{
 		{
-			Version: 100,
+			TableInfoVersion: 100,
 			TableName: model.TableName{
 				Schema:  "test",
 				Table:   "table1",
@@ -122,6 +122,8 @@ func TestWriteCheckpointTs(t *testing.T) {
 	os.MkdirAll(table1Dir, 0o755)
 
 	err = sink.WriteCheckpointTs(ctx, 100, tables)
+	require.Nil(t, err)
+	_, err = os.Stat(path.Join(table1Dir, "schema.json"))
 	require.Nil(t, err)
 	metadata, err := os.ReadFile(path.Join(parentDir, "metadata"))
 	require.Nil(t, err)

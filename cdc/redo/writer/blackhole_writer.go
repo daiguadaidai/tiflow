@@ -16,6 +16,7 @@ package writer
 import (
 	"context"
 	"errors"
+	"sync"
 
 	"github.com/pingcap/log"
 	"github.com/pingcap/tiflow/cdc/model"
@@ -24,7 +25,10 @@ import (
 
 // blackHoleSink defines a blackHole storage, it receives events and persists
 // without any latency
-type blackHoleWriter struct{}
+type blackHoleWriter struct {
+	tableRtsMap map[model.TableID]uint64
+	tableRtsMu  sync.RWMutex
+}
 
 func (bs *blackHoleWriter) DeleteAllLogs(ctx context.Context) error {
 	return nil
@@ -36,20 +40,27 @@ func (bs *blackHoleWriter) GC(ctx context.Context, checkpointTs model.Ts) error 
 
 // NewBlackHoleWriter creates a blackHole writer
 func NewBlackHoleWriter() *blackHoleWriter {
-	return &blackHoleWriter{}
+	return &blackHoleWriter{
+		tableRtsMap: make(map[model.TableID]uint64),
+	}
 }
 
-func (bs *blackHoleWriter) WriteLog(_ context.Context, logs []*model.RedoRowChangedEvent) (err error) {
+func (bs *blackHoleWriter) WriteLog(_ context.Context, tableID model.TableID, logs []*model.RedoRowChangedEvent) (err error) {
+	bs.tableRtsMu.Lock()
+	defer bs.tableRtsMu.Unlock()
 	if len(logs) == 0 {
 		return nil
 	}
 	current := logs[len(logs)-1].Row.CommitTs
+	bs.tableRtsMap[tableID] = current
 	log.Debug("write row redo logs", zap.Int("count", len(logs)),
 		zap.Uint64("current", current))
 	return
 }
 
 func (bs *blackHoleWriter) FlushLog(_ context.Context, checkpointTs, resolvedTs model.Ts) error {
+	bs.tableRtsMu.Lock()
+	defer bs.tableRtsMu.Unlock()
 	return nil
 }
 
@@ -78,7 +89,7 @@ func NewInvalidBlackHoleWriter(rl RedoLogWriter) *invalidBlackHoleWriter {
 }
 
 func (ibs *invalidBlackHoleWriter) WriteLog(
-	_ context.Context, _ []*model.RedoRowChangedEvent,
+	_ context.Context, _ model.TableID, _ []*model.RedoRowChangedEvent,
 ) (err error) {
 	return errors.New("[WriteLog] invalid black hole writer")
 }

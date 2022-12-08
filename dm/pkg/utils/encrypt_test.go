@@ -15,32 +15,34 @@ package utils
 
 import (
 	"encoding/base64"
-	"testing"
 
+	. "github.com/pingcap/check"
 	"github.com/pingcap/tiflow/dm/pkg/terror"
-	"github.com/stretchr/testify/require"
 )
 
-func TestEncrypt(t *testing.T) {
+var _ = Suite(&testEncryptSuite{})
+
+type testEncryptSuite struct{}
+
+func (t *testEncryptSuite) TestEncrypt(c *C) {
 	plaintext := "abc@123"
 	ciphertext, err := Encrypt(plaintext)
-	require.NoError(t, err)
+	c.Assert(err, IsNil)
 
 	plaintext2, err := Decrypt(ciphertext)
-	require.NoError(t, err)
-	require.Equal(t, plaintext, plaintext2)
-	require.Equal(t, plaintext2, DecryptOrPlaintext(ciphertext))
+	c.Assert(err, IsNil)
+	c.Assert(plaintext2, Equals, plaintext)
+	c.Assert(DecryptOrPlaintext(ciphertext), Equals, plaintext2)
 
 	// invalid base64 string
 	plaintext2, err = Decrypt("invalid-base64")
-	require.True(t, terror.ErrEncCipherTextBase64Decode.Equal(err))
-	require.Equal(t, "", plaintext2)
-	require.Equal(t, "invalid-base64", DecryptOrPlaintext("invalid-base64"))
+	c.Assert(terror.ErrEncCipherTextBase64Decode.Equal(err), IsTrue)
+	c.Assert(plaintext2, Equals, "")
+	c.Assert(DecryptOrPlaintext("invalid-base64"), Equals, "invalid-base64")
 
 	// invalid ciphertext
 	plaintext2, err = Decrypt(base64.StdEncoding.EncodeToString([]byte("invalid-plaintext")))
-	require.Regexp(t, ".*can not decrypt password.*", err)
-	require.Equal(t, "", plaintext2)
-
-	require.Equal(t, "invalid-plaintext", DecryptOrPlaintext("invalid-plaintext"))
+	c.Assert(err, ErrorMatches, ".*can not decrypt password.*")
+	c.Assert(plaintext2, Equals, "")
+	c.Assert(DecryptOrPlaintext("invalid-plaintext"), Equals, "invalid-plaintext")
 }

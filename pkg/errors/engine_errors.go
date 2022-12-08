@@ -47,6 +47,10 @@ var (
 		errors.RFCCodeText("DFLOW:ErrClusterResourceNotEnough"),
 	)
 
+	ErrGrpcBuildConn = errors.Normalize(
+		"dial grpc connection to %s failed",
+		errors.RFCCodeText("DFLOW:ErrGrpcBuildConn"),
+	)
 	ErrDecodeEtcdKeyFail = errors.Normalize(
 		"failed to decode etcd key: %s",
 		errors.RFCCodeText("DFLOW:ErrDecodeEtcdKeyFail"),
@@ -55,15 +59,15 @@ var (
 		"etcd api returns error",
 		errors.RFCCodeText("DFLOW:ErrEtcdAPIError"),
 	)
+	ErrNoRPCClient = errors.Normalize(
+		"no available RPC client",
+		errors.RFCCodeText("DFLOW:ErrNoRPCClient"),
+	)
 
 	// master related errors
 	ErrMasterNotReady = errors.Normalize(
 		"master is not ready",
 		errors.RFCCodeText("DFLOW:ErrMasterNotReady"),
-	)
-	ErrMasterNoLeader = errors.Normalize(
-		"master has no leader",
-		errors.RFCCodeText("DFLOW:ErrMasterNoLeader"),
 	)
 	ErrMasterDecodeConfigFile = errors.Normalize(
 		"decode config file failed",
@@ -72,6 +76,10 @@ var (
 	ErrMasterConfigUnknownItem = errors.Normalize(
 		"master config contains unknown configuration options: %s",
 		errors.RFCCodeText("DFLOW:ErrMasterConfigUnknownItem"),
+	)
+	ErrMasterRPCNotForward = errors.Normalize(
+		"server grpc is not forwarded to leader",
+		errors.RFCCodeText("DFLOW:ErrMasterRPCNotForward"),
 	)
 	ErrMasterNotFound = errors.Normalize(
 		"master is not found: master ID %s",

@@ -26,7 +26,6 @@ import (
 	_ "github.com/pingcap/tidb/types/parser_driver" // for parser driver
 	"github.com/pingcap/tidb/util/dbutil"
 	"github.com/pingcap/tidb/util/filter"
-	"github.com/pingcap/tidb/util/stringutil"
 	"github.com/pingcap/tiflow/dm/pkg/log"
 	"github.com/pingcap/tiflow/pkg/container/sortmap"
 	"go.uber.org/zap"
@@ -110,7 +109,6 @@ func (pc *SourceDumpPrivilegeChecker) Check(ctx context.Context) *Result {
 	err2 := verifyPrivilegesWithResult(result, grants, dumpRequiredPrivs)
 	if err2 != nil {
 		result.Errors = append(result.Errors, err2)
-		result.Instruction = "Please grant the required privileges to the account."
 	} else {
 		result.State = StateSuccess
 	}
@@ -158,7 +156,6 @@ func (pc *SourceReplicatePrivilegeChecker) Check(ctx context.Context) *Result {
 	if err2 != nil {
 		result.Errors = append(result.Errors, err2)
 		result.State = StateFailure
-		result.Instruction = "Grant the required privileges to the account."
 	}
 	return result
 }
@@ -310,7 +307,7 @@ func VerifyPrivileges(
 			return nil, errors.Errorf("grant has no user %s", grant)
 		}
 
-		dbPatChar, dbPatType := stringutil.CompilePattern(grantStmt.Level.DBName, '\\')
+		dbName := grantStmt.Level.DBName
 		tableName := grantStmt.Level.TableName
 		switch grantStmt.Level.Level {
 		case ast.GrantLevelGlobal:
@@ -342,11 +339,10 @@ func VerifyPrivileges(
 						if privs.needGlobal {
 							continue
 						}
-						for dbName := range privs.dbs {
-							if stringutil.DoMatch(dbName, dbPatChar, dbPatType) {
-								delete(privs.dbs, dbName)
-							}
+						if _, ok := privs.dbs[dbName]; !ok {
+							continue
 						}
+						delete(privs.dbs, dbName)
 					}
 					continue
 				}
@@ -354,19 +350,17 @@ func VerifyPrivileges(
 				if !ok || privs.needGlobal {
 					continue
 				}
+				if _, ok := privs.dbs[dbName]; !ok {
+					continue
+				}
 				// dumpling could report error if an allow-list table is lack of privilege.
 				// we only check that SELECT is granted on all columns, otherwise we can't SHOW CREATE TABLE
 				if privElem.Priv == mysql.SelectPriv && len(privElem.Cols) != 0 {
 					continue
 				}
-				for dbName := range privs.dbs {
-					if stringutil.DoMatch(dbName, dbPatChar, dbPatType) {
-						delete(privs.dbs, dbName)
-					}
-				}
+				delete(privs.dbs, dbName)
 			}
 		case ast.GrantLevelTable:
-			dbName := grantStmt.Level.DBName
 			for _, privElem := range grantStmt.Privs {
 				// all privileges available at a given privilege level (except GRANT OPTION)
 				// from https://dev.mysql.com/doc/refman/5.7/en/privileges-provided.html#priv_all
@@ -379,6 +373,9 @@ func VerifyPrivileges(
 						if !ok || dbPrivs.wholeDB {
 							continue
 						}
+						if _, ok := dbPrivs.tables[tableName]; !ok {
+							continue
+						}
 						delete(dbPrivs.tables, tableName)
 					}
 					continue
@@ -389,6 +386,9 @@ func VerifyPrivileges(
 				}
 				dbPrivs, ok := privs.dbs[dbName]
 				if !ok || dbPrivs.wholeDB {
+					continue
+				}
+				if _, ok := dbPrivs.tables[tableName]; !ok {
 					continue
 				}
 				// dumpling could report error if an allow-list table is lack of privilege.

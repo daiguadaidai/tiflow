@@ -14,13 +14,15 @@
 package utils
 
 import (
-	"testing"
-
-	"github.com/stretchr/testify/require"
+	. "github.com/pingcap/check"
 )
 
-func TestHash(t *testing.T) {
+var _ = Suite(&testHashSuite{})
+
+type testHashSuite struct{}
+
+func (t *testHashSuite) TestHash(c *C) {
 	// we only ensure hash multiple times for the same key got the same hash now.
 	key := "just-a-test"
-	require.Equal(t, GenHashKey(key), GenHashKey(key))
+	c.Assert(GenHashKey(key), Equals, GenHashKey(key))
 }

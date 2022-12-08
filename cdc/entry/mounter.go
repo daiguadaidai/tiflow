@@ -365,13 +365,23 @@ func (m *mounter) mountRowKVEntry(tableInfo *model.TableInfo, row *rowKVEntry, d
 		intRowID = row.RecordID.IntValue()
 	}
 
+	var tableInfoVersion uint64
+	// Align with the old format if old value disabled.
+	if row.Delete && !m.enableOldValue {
+		tableInfoVersion = 0
+	} else {
+		tableInfoVersion = tableInfo.TableInfoVersion
+	}
+
 	_, _, colInfos := tableInfo.GetRowColInfos()
+
 	rawRow.PreRowDatums = preRawCols
 	rawRow.RowDatums = rawCols
 	return &model.RowChangedEvent{
-		StartTs:  row.StartTs,
-		CommitTs: row.CRTs,
-		RowID:    intRowID,
+		StartTs:          row.StartTs,
+		CommitTs:         row.CRTs,
+		RowID:            intRowID,
+		TableInfoVersion: tableInfoVersion,
 		Table: &model.TableName{
 			Schema:      schemaName,
 			Table:       tableName,
@@ -379,7 +389,6 @@ func (m *mounter) mountRowKVEntry(tableInfo *model.TableInfo, row *rowKVEntry, d
 			IsPartition: tableInfo.GetPartitionInfo() != nil,
 		},
 		ColInfos:            colInfos,
-		TableInfo:           tableInfo,
 		Columns:             cols,
 		PreColumns:          preCols,
 		IndexColumns:        tableInfo.IndexColumnsOffset,

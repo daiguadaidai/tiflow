@@ -1376,6 +1376,11 @@ error = '''
 filter % returns no result
 '''
 
+["DFLOW:ErrGrpcBuildConn"]
+error = '''
+dial grpc connection to %s failed
+'''
+
 ["DFLOW:ErrHeartbeat"]
 error = '''
 heartbeat error type: %s
@@ -1506,11 +1511,6 @@ error = '''
 invalid master meta data: %s
 '''
 
-["DFLOW:ErrMasterNoLeader"]
-error = '''
-master has no leader
-'''
-
 ["DFLOW:ErrMasterNotFound"]
 error = '''
 master is not found: master ID %s
@@ -1519,6 +1519,11 @@ master is not found: master ID %s
 ["DFLOW:ErrMasterNotReady"]
 error = '''
 master is not ready
+'''
+
+["DFLOW:ErrMasterRPCNotForward"]
+error = '''
+server grpc is not forwarded to leader
 '''
 
 ["DFLOW:ErrMasterTooManyPendingEvents"]
@@ -1589,6 +1594,11 @@ metastore %s does not exist
 ["DFLOW:ErrNoQualifiedExecutor"]
 error = '''
 no executor is available for scheduling
+'''
+
+["DFLOW:ErrNoRPCClient"]
+error = '''
+no available RPC client
 '''
 
 ["DFLOW:ErrReadLocalFileDirectoryFailed"]

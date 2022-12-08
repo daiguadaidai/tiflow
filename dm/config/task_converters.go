@@ -21,8 +21,6 @@ import (
 	"github.com/pingcap/tidb-tools/pkg/column-mapping"
 	"github.com/pingcap/tidb/util/filter"
 	router "github.com/pingcap/tidb/util/table-router"
-	"github.com/pingcap/tiflow/dm/config/dbconfig"
-	"github.com/pingcap/tiflow/dm/config/security"
 	"github.com/pingcap/tiflow/dm/openapi"
 	"github.com/pingcap/tiflow/dm/pkg/log"
 	"github.com/pingcap/tiflow/dm/pkg/storage"
@@ -31,7 +29,7 @@ import (
 )
 
 // TaskConfigToSubTaskConfigs generates sub task configs by TaskConfig.
-func TaskConfigToSubTaskConfigs(c *TaskConfig, sources map[string]dbconfig.DBConfig) ([]*SubTaskConfig, error) {
+func TaskConfigToSubTaskConfigs(c *TaskConfig, sources map[string]DBConfig) ([]*SubTaskConfig, error) {
 	cfgs := make([]*SubTaskConfig, len(c.MySQLInstances))
 	for i, inst := range c.MySQLInstances {
 		dbCfg, exist := sources[inst.SourceID]
@@ -112,7 +110,7 @@ func TaskConfigToSubTaskConfigs(c *TaskConfig, sources map[string]dbconfig.DBCon
 }
 
 // OpenAPITaskToSubTaskConfigs generates sub task configs by openapi.Task.
-func OpenAPITaskToSubTaskConfigs(task *openapi.Task, toDBCfg *dbconfig.DBConfig, sourceCfgMap map[string]*SourceConfig) (
+func OpenAPITaskToSubTaskConfigs(task *openapi.Task, toDBCfg *DBConfig, sourceCfgMap map[string]*SourceConfig) (
 	[]*SubTaskConfig, error,
 ) {
 	// source name -> migrate rule list
@@ -207,7 +205,7 @@ func OpenAPITaskToSubTaskConfigs(task *openapi.Task, toDBCfg *dbconfig.DBConfig,
 			if fullCfg.DataDir != nil {
 				subTaskCfg.LoaderConfig.Dir = *fullCfg.DataDir
 			}
-			subTaskCfg.LoaderConfig.OnDuplicateLogical = LogicalDuplicateResolveType(task.OnDuplicate)
+			subTaskCfg.LoaderConfig.OnDuplicate = DuplicateResolveType(task.OnDuplicate)
 		}
 		// set incremental config
 		subTaskCfg.SyncerConfig = DefaultSyncerConfig()
@@ -283,8 +281,8 @@ func OpenAPITaskToSubTaskConfigs(task *openapi.Task, toDBCfg *dbconfig.DBConfig,
 }
 
 // GetTargetDBCfgFromOpenAPITask gets target db config.
-func GetTargetDBCfgFromOpenAPITask(task *openapi.Task) *dbconfig.DBConfig {
-	toDBCfg := &dbconfig.DBConfig{
+func GetTargetDBCfgFromOpenAPITask(task *openapi.Task) *DBConfig {
+	toDBCfg := &DBConfig{
 		Host:     task.TargetConfig.Host,
 		Port:     task.TargetConfig.Port,
 		User:     task.TargetConfig.User,
@@ -295,7 +293,7 @@ func GetTargetDBCfgFromOpenAPITask(task *openapi.Task) *dbconfig.DBConfig {
 		if task.TargetConfig.Security.CertAllowedCn != nil {
 			certAllowedCN = *task.TargetConfig.Security.CertAllowedCn
 		}
-		toDBCfg.Security = &security.Security{
+		toDBCfg.Security = &Security{
 			SSLCABytes:    []byte(task.TargetConfig.Security.SslCaContent),
 			SSLKeyBytes:   []byte(task.TargetConfig.Security.SslKeyContent),
 			SSLCertBytes:  []byte(task.TargetConfig.Security.SslCertContent),
@@ -598,7 +596,7 @@ func SubTaskConfigsToOpenAPITask(subTaskConfigList []*SubTaskConfig) *openapi.Ta
 		TaskMode:                  openapi.TaskTaskMode(oneSubtaskConfig.Mode),
 		EnhanceOnlineSchemaChange: oneSubtaskConfig.OnlineDDL,
 		MetaSchema:                &oneSubtaskConfig.MetaSchema,
-		OnDuplicate:               openapi.TaskOnDuplicate(oneSubtaskConfig.LoaderConfig.OnDuplicateLogical),
+		OnDuplicate:               openapi.TaskOnDuplicate(oneSubtaskConfig.LoaderConfig.OnDuplicate),
 		SourceConfig:              taskSourceConfig,
 		TargetConfig: openapi.TaskTargetDataBase{
 			Host:     oneSubtaskConfig.To.Host,
@@ -624,7 +622,7 @@ func SubTaskConfigsToOpenAPITask(subTaskConfigList []*SubTaskConfig) *openapi.Ta
 
 // TaskConfigToOpenAPITask converts TaskConfig to an openapi task.
 func TaskConfigToOpenAPITask(c *TaskConfig, sourceCfgMap map[string]*SourceConfig) (*openapi.Task, error) {
-	cfgs := make(map[string]dbconfig.DBConfig)
+	cfgs := make(map[string]DBConfig)
 	for _, source := range c.MySQLInstances {
 		if cfg, ok := sourceCfgMap[source.SourceID]; ok {
 			// check the password

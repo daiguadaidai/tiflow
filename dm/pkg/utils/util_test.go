@@ -17,17 +17,14 @@ import (
 	"context"
 	"errors"
 	"os"
-	"testing"
 	"time"
 
 	"github.com/go-mysql-org/go-mysql/mysql"
-	gmysql "github.com/go-sql-driver/mysql"
+	. "github.com/pingcap/check"
 	"github.com/pingcap/tidb/errno"
-	"github.com/stretchr/testify/require"
 )
 
-func TestDecodeBinlogPosition(t *testing.T) {
-	t.Parallel()
+func (t *testUtilsSuite) TestDecodeBinlogPosition(c *C) {
 	testCases := []struct {
 		pos      string
 		isErr    bool
@@ -44,16 +41,15 @@ func TestDecodeBinlogPosition(t *testing.T) {
 	for _, tc := range testCases {
 		pos, err := DecodeBinlogPosition(tc.pos)
 		if tc.isErr {
-			require.Error(t, err)
+			c.Assert(err, NotNil)
 		} else {
-			require.NoError(t, err)
-			require.Equal(t, tc.expecetd, pos)
+			c.Assert(err, IsNil)
+			c.Assert(pos, DeepEquals, tc.expecetd)
 		}
 	}
 }
 
-func TestWaitSomething(t *testing.T) {
-	t.Parallel()
+func (t *testUtilsSuite) TestWaitSomething(c *C) {
 	var (
 		backoff  = 10
 		waitTime = 10 * time.Millisecond
@@ -65,8 +61,8 @@ func TestWaitSomething(t *testing.T) {
 		count++
 		return false
 	}
-	require.False(t, WaitSomething(backoff, waitTime, f1))
-	require.Equal(t, backoff, count)
+	c.Assert(WaitSomething(backoff, waitTime, f1), IsFalse)
+	c.Assert(count, Equals, backoff)
 
 	count = 0 // reset
 	// wait success
@@ -75,12 +71,11 @@ func TestWaitSomething(t *testing.T) {
 		return count >= 5
 	}
 
-	require.True(t, WaitSomething(backoff, waitTime, f2))
-	require.Equal(t, 5, count)
+	c.Assert(WaitSomething(backoff, waitTime, f2), IsTrue)
+	c.Assert(count, Equals, 5)
 }
 
-func TestUnwrapScheme(t *testing.T) {
-	t.Parallel()
+func (t *testUtilsSuite) TestUnwrapScheme(c *C) {
 	cases := []struct {
 		old string
 		new string
@@ -107,12 +102,11 @@ func TestUnwrapScheme(t *testing.T) {
 		},
 	}
 	for _, ca := range cases {
-		require.Equal(t, ca.new, UnwrapScheme(ca.old))
+		c.Assert(UnwrapScheme(ca.old), Equals, ca.new)
 	}
 }
 
-func TestWrapSchemes(t *testing.T) {
-	t.Parallel()
+func (t *testUtilsSuite) TestWrapSchemes(c *C) {
 	cases := []struct {
 		old   string
 		http  string
@@ -140,56 +134,45 @@ func TestWrapSchemes(t *testing.T) {
 		},
 	}
 	for _, ca := range cases {
-		require.Equal(t, ca.http, WrapSchemes(ca.old, false))
-		require.Equal(t, ca.https, WrapSchemes(ca.old, true))
+		c.Assert(WrapSchemes(ca.old, false), Equals, ca.http)
+		c.Assert(WrapSchemes(ca.old, true), Equals, ca.https)
 	}
 }
 
-func TestWrapSchemesForInitialCluster(t *testing.T) {
-	t.Parallel()
-	require.Equal(t, "master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293", false))
-	require.Equal(t, "master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293", true))
+func (t *testUtilsSuite) TestWrapSchemesForInitialCluster(c *C) {
+	c.Assert(WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293", false), Equals,
+		"master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293")
+	c.Assert(WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293", true), Equals,
+		"master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293")
 
 	// correct `http` or `https` for some URLs
-	require.Equal(t, "master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=127.0.0.1:8292,master3=https://127.0.0.1:8293", false))
-	require.Equal(t, "master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=127.0.0.1:8292,master3=https://127.0.0.1:8293", true))
+	c.Assert(WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=127.0.0.1:8292,master3=https://127.0.0.1:8293", false), Equals,
+		"master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293")
+	c.Assert(WrapSchemesForInitialCluster("master1=http://127.0.0.1:8291,master2=127.0.0.1:8292,master3=https://127.0.0.1:8293", true), Equals,
+		"master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293")
 
 	// add `http` or `https` for all URLs
-	require.Equal(t, "master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=127.0.0.1:8291,master2=127.0.0.1:8292,master3=127.0.0.1:8293", false))
-	require.Equal(t, "master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293",
-		WrapSchemesForInitialCluster("master1=127.0.0.1:8291,master2=127.0.0.1:8292,master3=127.0.0.1:8293", true))
+	c.Assert(WrapSchemesForInitialCluster("master1=127.0.0.1:8291,master2=127.0.0.1:8292,master3=127.0.0.1:8293", false), Equals,
+		"master1=http://127.0.0.1:8291,master2=http://127.0.0.1:8292,master3=http://127.0.0.1:8293")
+	c.Assert(WrapSchemesForInitialCluster("master1=127.0.0.1:8291,master2=127.0.0.1:8292,master3=127.0.0.1:8293", true), Equals,
+		"master1=https://127.0.0.1:8291,master2=https://127.0.0.1:8292,master3=https://127.0.0.1:8293")
 }
 
-func TestIsContextCanceledError(t *testing.T) {
-	t.Parallel()
-	require.True(t, IsContextCanceledError(context.Canceled))
-	require.False(t, IsContextCanceledError(context.DeadlineExceeded))
-	require.False(t, IsContextCanceledError(errors.New("another error")))
+func (t *testUtilsSuite) TestIsContextCanceledError(c *C) {
+	c.Assert(IsContextCanceledError(context.Canceled), IsTrue)
+	c.Assert(IsContextCanceledError(context.DeadlineExceeded), IsFalse)
+	c.Assert(IsContextCanceledError(errors.New("another error")), IsFalse)
 }
 
-func newMysqlErr(number uint16, message string) *gmysql.MySQLError {
-	return &gmysql.MySQLError{
-		Number:  number,
-		Message: message,
-	}
+func (t *testUtilsSuite) TestIgnoreErrorCheckpoint(c *C) {
+	c.Assert(IgnoreErrorCheckpoint(newMysqlErr(errno.ErrDupFieldName, "Duplicate column name c1")), IsTrue)
+	c.Assert(IgnoreErrorCheckpoint(newMysqlErr(errno.ErrTableExists, "Table tbl already exists")), IsFalse)
+	c.Assert(IgnoreErrorCheckpoint(errors.New("another error")), IsFalse)
 }
 
-func TestIgnoreErrorCheckpoint(t *testing.T) {
-	t.Parallel()
-	require.True(t, IgnoreErrorCheckpoint(newMysqlErr(errno.ErrDupFieldName, "Duplicate column name c1")))
-	require.False(t, IgnoreErrorCheckpoint(newMysqlErr(errno.ErrTableExists, "Table tbl already exists")))
-	require.False(t, IgnoreErrorCheckpoint(errors.New("another error")))
-}
-
-func TestIsBuildInSkipDDL(t *testing.T) {
-	t.Parallel()
-	require.False(t, IsBuildInSkipDDL("alter table tbl add column c1 int"))
-	require.True(t, IsBuildInSkipDDL("DROP PROCEDURE"))
+func (t *testUtilsSuite) TestIsBuildInSkipDDL(c *C) {
+	c.Assert(IsBuildInSkipDDL("alter table tbl add column c1 int"), IsFalse)
+	c.Assert(IsBuildInSkipDDL("DROP PROCEDURE"), IsTrue)
 
 	cases := []struct {
 		sql           string
@@ -279,12 +262,11 @@ END`, true},
 		{"revoke reload on *.* from 't2'@'%'", true},
 	}
 	for _, ca := range cases {
-		require.Equal(t, ca.expectSkipped, IsBuildInSkipDDL(ca.sql))
+		c.Assert(IsBuildInSkipDDL(ca.sql), Equals, ca.expectSkipped)
 	}
 }
 
-func TestProxyFields(t *testing.T) {
-	t.Parallel()
+func (t *testUtilsSuite) TestProxyFields(c *C) {
 	revIndex := map[string]int{
 		"http_proxy":  0,
 		"https_proxy": 1,
@@ -297,20 +279,20 @@ func TestProxyFields(t *testing.T) {
 	// Each bit of the mask decided whether this index of `envs` would be set.
 	for mask := 0; mask <= 0b111; mask++ {
 		for _, env := range envs {
-			require.NoError(t, os.Unsetenv(env))
+			c.Assert(os.Unsetenv(env), IsNil)
 		}
 
 		for i := 0; i < 3; i++ {
 			if (1<<i)&mask != 0 {
-				require.NoError(t, os.Setenv(envs[i], envPreset[i]))
+				c.Assert(os.Setenv(envs[i], envPreset[i]), IsNil)
 			}
 		}
 
 		for _, field := range proxyFields() {
 			idx, ok := revIndex[field.Key]
-			require.True(t, ok)
-			require.NotEqual(t, 0, (1<<idx)&mask)
-			require.Equal(t, envPreset[idx], field.String)
+			c.Assert(ok, IsTrue)
+			c.Assert((1<<idx)&mask, Not(Equals), 0)
+			c.Assert(field.String, Equals, envPreset[idx])
 		}
 	}
 }
