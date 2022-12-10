@@ -476,11 +476,11 @@ func (dt *downstreamTracker) getTableInfoByCreateStmt(tctx *tcontext.Context, ta
 func (dt *downstreamTracker) initDownStreamSQLModeAndParser(tctx *tcontext.Context) error {
 	defaultSQLMode := ""
 
-	setSQLMode := fmt.Sprintf("SET SESSION SQL_MODE = '%s'", defaultSQLMode)
-	_, err := dt.downstreamConn.ExecuteSQL(tctx, nil, []string{setSQLMode})
-	if err != nil {
-		return dmterror.ErrSchemaTrackerCannotSetDownstreamSQLMode.Delegate(err, defaultSQLMode)
-	}
+	// setSQLMode := fmt.Sprintf("SET SESSION SQL_MODE = '%s'", defaultSQLMode)
+	// _, err := dt.downstreamConn.ExecuteSQL(tctx, nil, []string{setSQLMode})
+	// if err != nil {
+	// 	return dmterror.ErrSchemaTrackerCannotSetDownstreamSQLMode.Delegate(err, defaultSQLMode)
+	// }
 	stmtParser, err := utils.GetParserFromSQLModeStr(defaultSQLMode)
 	if err != nil {
 		return dmterror.ErrSchemaTrackerCannotInitDownstreamParser.Delegate(err, defaultSQLMode)
